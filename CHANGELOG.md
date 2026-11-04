@@ -1,6 +1,19 @@
 ﻿# Changelog
 
 ## Unreleased
+- Deleting, editing or regenerating a turn no longer scrolls the transcript to the
+  bottom. A rewrite changes pi's session id without changing the conversation, so
+  the sidebar treated it as opening a different session: it dropped every row and
+  followed the newest message. The host now marks the snapshot it emits for a
+  rewrite, and the webview keeps the reader where they were. Opening another
+  session from the list still lands on its latest message.
+- A reply's own row gains Copy ahead of Branch and Regenerate, the order PI-Desktop
+  puts them in. It copies pi's own answer text rather than the rendered HTML, so a
+  fence or a table survives the paste, and it stays available on a row whose prompt
+  fell outside the rendered window.
+- Deleting a prompt no longer asks for a typed confirmation: the trash button is
+  the confirmation, the way PI-Desktop's is. Rebuilding into a new session file
+  still leaves the original untouched, so switching back is the undo.
 
 - A message's reasoning and tool calls fold into one line at its top. The line is
   open while the reply streams and closes when it settles; opening it by hand is

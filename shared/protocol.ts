@@ -233,6 +233,18 @@ export type HostToWebviewMessage =
 			 */
 			omittedPromptCount?: number;
 			/**
+			 * The host rebuilt this conversation into a new session file.
+			 *
+			 * A history rewrite (delete, edit, regenerate) writes the branch to a new
+			 * file and switches pi onto it, so `state.sessionId` changes while the
+			 * reader is still looking at the same conversation minus some turns.
+			 * Without this, the webview cannot tell that replacement apart from
+			 * opening a different session, and treats it as navigation: it tears the
+			 * transcript down and snaps to the newest message, losing the reader's
+			 * place on a turn they were only editing.
+			 */
+			historyRewritten?: boolean;
+			/**
 			 * Text of the session's first user message, when `messages` no longer carries
 			 * it.
 			 *

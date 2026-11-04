@@ -75,6 +75,28 @@ text comparison".
 - Scroll metrics are measured **only after** following is confirmed: reading them
   forces layout, and a pass where the reader scrolled away does not owe one.
 
+## 5b. A history rewrite is not navigation
+
+Delete / edit / regenerate rebuild the branch into a new pi session file and
+switch pi onto it, so the snapshot that follows carries a **different
+`sessionId` for the same conversation**
+([host/session-history.md](../host/session-history.md)).
+
+- `SessionController.applySnapshot` therefore computes `sessionChanged` from
+  `sessionId` inequality **minus** `message.historyRewritten`, which only the
+  host's rewrite path sets. Without that marker the webview tears the
+  transcript down and snaps to the newest message, which is exactly what a
+  reader editing one turn does not want.
+- A rewrite keeps the surviving nodes: identity is adopted by serialized
+  content, so reopened reasoning and tool cards survive, and `transcriptView`
+  removes the two or three rows that are actually gone.
+- Navigation — the session picker, a fork, a fresh session — arrives without the
+  marker and must still land on the latest message. Both directions are pinned
+  by `test/unit/webview/scroll-after-rewrite.test.mjs`.
+- The marker is a parameter of `refreshSnapshot(options)`, never instance state:
+  a leaked flag would silently convert the next real switch into "stay put".
+
+
 ## 6. Pin only after all regions write DOM
 
 The render pipeline ends with `stickToBottomIfFollowing()` then

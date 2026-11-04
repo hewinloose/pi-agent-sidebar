@@ -1090,7 +1090,9 @@ export class PiViewProvider
 		// else reaches it as `undefined` and dies inside its own path handling.
 		await client.request({ type: "switch_session", sessionPath: sessionFile });
 		await this.waitForSessionReplacement(client, generation, previous, sessionFile);
-		await this.refreshSnapshot();
+		// The id changed because this host rebuilt the conversation, not because the
+		// reader opened another one: say so, so the sidebar keeps their place.
+		await this.refreshSnapshot({ historyRewritten: true });
 		await this.sendSessionList();
 	}
 
@@ -1424,7 +1426,15 @@ export class PiViewProvider
 		void this.post({ type: "connection", phase: "error", detail });
 	}
 
-	private async refreshSnapshot(): Promise<void> {
+	/**
+	 * Publishes the current pi session to the webview.
+	 *
+	 * `historyRewritten` marks the one snapshot that follows a rewrite of the
+	 * conversation into a new session file: the id changed, the conversation did
+	 * not. It is a parameter rather than instance state so it cannot leak onto a
+	 * later snapshot that really is navigation.
+	 */
+	private async refreshSnapshot(options?: { historyRewritten?: boolean }): Promise<void> {
 		const sequence = ++this.snapshotSequence;
 		const client = this.client;
 		const folder = this.workspaceFolder;
@@ -1493,6 +1503,10 @@ export class PiViewProvider
 			type: "snapshot",
 			state: this.state,
 			messages,
+			// Only the rewrite path sets this, and only for the snapshot it emits
+			// itself: the webview needs it to keep the reader's place instead of
+			// treating the new session id as navigation.
+			...(options?.historyRewritten ? { historyRewritten: true } : {}),
 			// Reported rather than derived from `state.messageCount`: that number is
 			// pi's own accounting, and this one has to describe what this snapshot left
 			// out regardless of how pi counts.

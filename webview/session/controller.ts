@@ -21,7 +21,12 @@ export class SessionController {
 
  applySnapshot(message: Extract<HostToWebviewMessage, { type: "snapshot" }>): void {
   const { state, transcript } = this.options;
-  const sessionChanged = Boolean(state.state.sessionId && state.state.sessionId !== message.state.sessionId);
+  // A history rewrite (delete / edit / regenerate) rebuilds the branch into a new
+  // session file, so the id changes while the reader is looking at the same
+  // conversation. Treating that as navigation would tear the transcript down and
+  // snap to the newest message — the reader loses the turn they were editing.
+  const replacedSession = Boolean(state.state.sessionId && state.state.sessionId !== message.state.sessionId);
+  const sessionChanged = replacedSession && message.historyRewritten !== true;
   state.state = message.state;
   state.omittedMessageCount = message.omittedMessageCount ?? 0;
   state.omittedPromptCount = message.omittedPromptCount ?? 0;
