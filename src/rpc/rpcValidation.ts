@@ -53,6 +53,14 @@ export interface MessageWindow {
 	messages: PiMessage[];
 	omittedCount: number;
 	/**
+	 * User prompts inside the dropped prefix.
+	 *
+	 * History actions address prompts from the start of the session, but the
+	 * webview can only count the ones it can see, so it needs the missing count
+	 * to name the right prompt.
+	 */
+	omittedPromptCount: number;
+	/**
 	 * Text of the session's first user message, when the window left it out.
 	 *
 	 * The session title is derived from that prompt and the webview only sees the
@@ -88,8 +96,26 @@ export function parseMessagesWindow(
 				parsePiMessage(message, `messages[${start + index}]`),
 			),
 		omittedCount: start,
+		omittedPromptCount: start > 0 ? countUserMessages(all, start) : 0,
 		titleSeed: start > 0 ? firstUserMessageText(all, start) : undefined,
 	};
+}
+
+/**
+ * Counts user-role messages in `messages[0..end)`.
+ *
+ * Read leniently for the same reason `firstUserMessageText` is: this scans the
+ * part of the list the window dropped, and a malformed row there must degrade
+ * the count, not fail the snapshot.
+ */
+function countUserMessages(messages: unknown[], end: number): number {
+	let count = 0;
+	for (let index = 0; index < end; index += 1) {
+		const value = messages[index];
+		if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+		if ((value as { role?: unknown }).role === "user") count += 1;
+	}
+	return count;
 }
 
 /**

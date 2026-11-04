@@ -3,6 +3,8 @@ export interface TextPromptOptions {
 	label: string;
 	initialValue: string;
 	confirmLabel: string;
+	/** Defaults to `Cancel`; the message dialogs pass PI-Desktop's zh-CN `取消`. */
+	cancelLabel?: string;
 	onSubmit: (value: string) => void;
 	maxLength?: number;
 }
@@ -50,7 +52,7 @@ export class ModalController {
 		input.setAttribute("autocomplete", "off");
 		const actions = this.document.createElement("div");
 		actions.className = "modal-actions";
-		const cancel = this.createButton("Cancel", "secondary-button");
+		const cancel = this.createButton(options.cancelLabel ?? "Cancel", "secondary-button");
 		cancel.addEventListener("click", () => this.close());
 		const confirm = this.createButton(options.confirmLabel, "primary-button");
 		const submit = () => {

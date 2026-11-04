@@ -24,6 +24,7 @@ export class SessionController {
   const sessionChanged = Boolean(state.state.sessionId && state.state.sessionId !== message.state.sessionId);
   state.state = message.state;
   state.omittedMessageCount = message.omittedMessageCount ?? 0;
+  state.omittedPromptCount = message.omittedPromptCount ?? 0;
   state.titleSeed = message.titleSeed ?? "";
   // Identity must be adopted against the old array, before installing the snapshot.
   transcript.adoptSnapshot(message.messages);

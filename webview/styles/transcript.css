@@ -842,6 +842,83 @@
 	gap: var(--pi-line-half);
 }
 
+
+/* A run of reasoning and tool calls collapses into one line. Closed is the
+   default: the transcript exists to show the answer, and every command the agent
+   ran would otherwise sit between the reader and it. Opening the handle restores
+   the items unchanged — the head row keeps its own item in the DOM, it is only
+   `display: none` until the run is open. */
+.activity-process {
+	display: flex;
+	width: 100%;
+	min-width: 0;
+	min-height: 26px;
+	align-items: center;
+	gap: 5px;
+	/* The icon and label sit on the prose edge; the hover fill bleeds 4px into
+	   the gutter, the same inline geometry a tool row's header uses. */
+	margin: 0 -4px;
+	padding: 2px 4px;
+	border: 0;
+	border-radius: var(--pi-radius-control);
+	background: transparent;
+	color: var(--pi-muted);
+	font-family: var(--vscode-font-family);
+	font-size: 13px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.activity-process:hover {
+	background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.1));
+	color: var(--pi-theme-text);
+}
+
+.activity-process:focus-visible {
+	outline: 1px solid var(--pi-focus-ring);
+	outline-offset: 1px;
+}
+
+.activity-process-icon,
+.activity-process-caret {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+}
+
+.activity-process-label {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Metadata rides beside the label in the muted ink, never in the label's own. */
+.activity-process-note {
+	flex: none;
+	color: var(--pi-theme-dim);
+	font-size: 0.85em;
+}
+
+.activity-process-caret {
+	margin-inline-start: auto;
+	color: var(--pi-theme-dim);
+	opacity: 0.65;
+	transition: transform 120ms ease;
+}
+
+.message-slot.process-open .activity-process-caret {
+	transform: rotate(90deg);
+}
+
+.message-slot:not(.process-open) .activity-timeline[data-process]:not([data-process-head]) {
+	display: none;
+}
+
+.message-slot:not(.process-open) .activity-timeline[data-process-head] > .activity-item {
+	display: none;
+}
 .activity-timeline + .activity-timeline {
 	margin-top: var(--pi-line-half);
 }
@@ -1220,6 +1297,21 @@
 	white-space: nowrap;
 }
 
+/* A closed bash box says "运行命令", not the pipeline it ran: the command is
+   quoted once the reader opens the box, and `title` answers a hover in the
+   meantime. The label is inline so it inherits the row's ellipsis behaviour. */
+.tool-command-name {
+	display: none;
+}
+
+.tool-call.expandable:not(.expanded) .tool-command-name {
+	display: inline;
+}
+
+.tool-call.expandable:not(.expanded) .tool-command .header-text {
+	display: none;
+}
+
 /* `min-width: 0` is load-bearing: a flex item will not shrink past its
    min-content width without it, and an overflowing box draws no ellipsis. */
 .tool-call:not(.expanded) .header-text,
@@ -1283,6 +1375,19 @@
 
 .tool-call.expanded .tool-hint {
 	display: none;
+}
+
+/* While a call runs the trail shows its elapsed time in the slot the `output`
+   word leaves empty (that word is `visibility: hidden` above, so it keeps
+   reserving the column). Tabular figures stop the number from shifting its own
+   column as it grows, and the counter stays visible in an expanded box: an
+   expanded card is exactly where a long run is worth timing. */
+.tool-elapsed {
+	margin-left: 7px;
+	color: var(--pi-theme-dim);
+	font-weight: 400;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 /* Skill invocation: a `/skill:name` command reaches the transcript as one user
@@ -1349,6 +1454,69 @@
 
 .skill-block.expanded .skill-hint {
 	display: none;
+}
+
+/* Row actions sit *under* the bubble, outside it, the way PI-Desktop lays them
+   out: replies read from the left, the reader's own words from the right, and
+   the row keeps its own 24px lane so revealing it never reflows the transcript.
+   They are always rendered — the handler refuses while pi is busy — so `opacity`
+   hides them without a rebuild every time a stream starts. */
+.message-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 2px;
+	min-height: 24px;
+	padding-top: 2px;
+	opacity: 0;
+	transition: opacity 120ms ease;
+}
+
+.message-actions.user-actions {
+	justify-content: flex-end;
+}
+
+.message-slot:hover .message-actions,
+.message-actions:focus-within {
+	opacity: 1;
+}
+
+/* One square icon button per action, drawn the way PI-Desktop draws its row
+   actions: a 13px stroked glyph in the row's own ink, with the danger action
+   turning red on hover. The label lives in `title`/`aria-label` and never on the
+   surface, so a row stays as quiet as the message it belongs to. */
+.message-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 0;
+	border-radius: var(--pi-radius-control);
+	background: transparent;
+	color: var(--pi-muted);
+	cursor: pointer;
+}
+
+.message-action:hover {
+	color: var(--pi-theme-text);
+}
+
+.message-action.danger:hover {
+	color: var(--vscode-errorForeground, #f14c4c);
+}
+
+.message-action:focus-visible {
+	outline: 1px solid var(--pi-focus-ring);
+	outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.message-actions {
+		transition: none;
+	}
 }
 
 /* The card owns the inset, so the body starts flush under the header;

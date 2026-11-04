@@ -20,6 +20,7 @@ import {
 	type CodeHighlighter,
 } from "./highlight.js";
 import { thinkingGroups, type ThinkingGroup } from "./thinkingGroups.js";
+import { runningElapsedLabel } from "./toolDuration.js";
 
 marked.setOptions({ gfm: true, breaks: true });
 const cjkExtension = markedCjkFriendly();
@@ -160,6 +161,10 @@ export function isRenderableMessage(message: PiMessage): boolean {
  * Message content is covered by `identityOf` rather than inspected: pi replaces
  * message objects on every change instead of mutating them, so a per-object
  * identity marker is both cheaper and more exact than hashing content.
+ *
+ * The prompt ordinal is the one input left out, deliberately: it is derived from
+ * the message's place in the snapshot, and a shifted window arrives as new
+ * message objects, which `identityOf` already invalidates.
  */
 export function messageRenderSignature(
 	message: PiMessage,
@@ -189,10 +194,11 @@ export function messageHtml(
 	liveTools: ReadonlyMap<string, TranscriptLiveTool>,
 	streaming: boolean,
 	messageKey: string,
-	expandedThinkingKeys?: ReadonlySet<string>,
+	isThinkingExpanded?: (thinkingKey: string) => boolean,
+	promptOrdinal?: number,
 ): string {
 	if (message.role === "toolResult") return "";
-	if (message.role === "user") return userMessageHtml(message);
+	if (message.role === "user") return userMessageHtml(message, promptOrdinal);
 	if (message.role === "assistant") {
 		return assistantMessageHtml(
 			message,
@@ -200,7 +206,8 @@ export function messageHtml(
 			liveTools,
 			streaming,
 			messageKey,
-			expandedThinkingKeys,
+			isThinkingExpanded,
+			promptOrdinal,
 		);
 	}
 	if (message.role === "bashExecution") {
@@ -232,7 +239,7 @@ export function messageHtml(
 	return "";
 }
 
-function userMessageHtml(message: PiMessage): string {
+function userMessageHtml(message: PiMessage, promptOrdinal?: number): string {
 	const rawText = contentText(message.content);
 	const skill = parseSkillBlock(rawText);
 	if (skill) return skillMessageHtml(skill);
@@ -252,7 +259,54 @@ function userMessageHtml(message: PiMessage): string {
 				`<img class="message-image" src="data:${escapeHtml(image.mimeType ?? "image/png")};base64,${escapeHtml(image.data ?? "")}" alt="Attached image">`,
 		)
 		.join("");
-	return `<article class="message user-message"><div class="user-message-text">${bodyHtml}</div>${imageHtml}</article>`;
+	return `<article class="message user-message"><div class="user-message-text">${bodyHtml}</div>${imageHtml}</article>${messageActionsHtml("user", promptOrdinal)}`;
+}
+
+/**
+ * The hover actions for one row, worded and drawn the way PI-Desktop draws them.
+ *
+ * Kept out of the section list on purpose: a section is cached by content hash,
+ * and these buttons depend on where the row sits in the session, not on its
+ * text. They are always rendered and refuse at click time instead of appearing
+ * and disappearing with the busy flag, which would rebuild the row on every
+ * stream start.
+ *
+ * The glyph is appended after sanitizing (see `dom.ts`): the transcript's
+ * sanitizer keeps the HTML profile only, so an inline `<svg>` written here would
+ * be stripped before it ever reached the page.
+ */
+interface MessageActionSpec {
+	action: "edit" | "delete" | "regenerate" | "fork";
+	/** PI-Desktop `chat.*` copy, zh-CN. */
+	label: string;
+	danger?: boolean;
+}
+
+const USER_MESSAGE_ACTIONS: readonly MessageActionSpec[] = [
+	{ action: "edit", label: "编辑并重新发送" },
+	{ action: "delete", label: "删除消息", danger: true },
+];
+
+const ASSISTANT_MESSAGE_ACTIONS: readonly MessageActionSpec[] = [
+	{ action: "regenerate", label: "重新生成" },
+	{ action: "fork", label: "从此回复创建分支" },
+];
+
+function messageActionsHtml(kind: "user" | "assistant", promptOrdinal?: number): string {
+	if (promptOrdinal === undefined) return "";
+	const actions = kind === "user" ? USER_MESSAGE_ACTIONS : ASSISTANT_MESSAGE_ACTIONS;
+	// The row sits *outside* the bubble: PI-Desktop keeps the actions under the
+	// message, aligned to the side the bubble is aligned to, so the buttons never
+	// land inside a framed turn.
+	const alignment = kind === "user" ? " user-actions" : "";
+	const buttons = actions
+		.map((item) => {
+			const label = escapeHtml(item.label);
+			const danger = item.danger ? " danger" : "";
+			return `<button type="button" class="message-action${danger}" data-message-action="${item.action}" data-prompt-ordinal="${promptOrdinal}" title="${label}" aria-label="${label}"></button>`;
+		})
+		.join("");
+	return `<div class="message-actions${alignment}">${buttons}</div>`;
 }
 
 /**
@@ -409,19 +463,26 @@ function assistantMessageHtml(
 	liveTools: ReadonlyMap<string, TranscriptLiveTool>,
 	streaming: boolean,
 	messageKey: string,
-	expandedThinkingKeys?: ReadonlySet<string>,
+	isThinkingExpanded?: (thinkingKey: string) => boolean,
+	promptOrdinal?: number,
 ): string {
-	return `<article class="message assistant-message">${assistantMessageSections(
+	const sections = assistantMessageSections(
 		message,
 		results,
 		liveTools,
 		streaming,
 		messageKey,
 		false,
-		expandedThinkingKeys,
-	)
+		isThinkingExpanded,
+	);
+	// The row belongs to the answer, not to the work that led to it: a message
+	// holding only reasoning or a tool call is a step, and hanging "regenerate"
+	// under a shell command reads as if the command were the reply.
+	const hasAnswer = sections.some((section) => section.key.startsWith("content-"));
+	const actions = hasAnswer ? messageActionsHtml("assistant", promptOrdinal) : "";
+	return `<article class="message assistant-message">${sections
 		.map((section) => section.html)
-		.join("")}</article>`;
+		.join("")}</article>${actions}`;
 }
 
 /**
@@ -462,17 +523,38 @@ export function assistantMessageSections(
 	streaming: boolean,
 	messageKey: string,
 	deferStreamingTextHtml = false,
-	expandedThinkingKeys?: ReadonlySet<string>,
+	isThinkingExpanded?: (thinkingKey: string) => boolean,
 ): AssistantMessageSection[] {
 	const blocks = Array.isArray(message.content) ? message.content : [];
 	// Some models report reasoning as a series of parts, one `thinking` block
 	// each. They are drawn as one section per run of them; the run's first block
 	// is the one that carries the section.
+	const thinkingRuns = thinkingGroups(blocks);
 	const thinkingGroupsByStart = new Map<number, ThinkingGroup>();
-	for (const group of thinkingGroups(blocks)) {
+	for (const group of thinkingRuns) {
 		thinkingGroupsByStart.set(group.startIndex, group);
 	}
+	// One handle stands in for the whole message, labelled the way PI-Desktop
+	// labels its process group: the run's own shape rather than a bare word.
+	const toolBlocks = blocks.filter((block) => block.type === "toolCall" && block.id && block.name);
+	const allCommands = toolBlocks.length > 0 && toolBlocks.every((block) => block.name === "bash");
+	const processLabel =
+		toolBlocks.length === 0
+			? `${thinkingRuns.length} 个思考步骤`
+			: allCommands
+				? `${toolBlocks.length} 个命令`
+				: `${toolBlocks.length} 次工具操作`;
+	const processNote = thinkingRuns.length > 0 && toolBlocks.length > 0 ? "含思考" : "";
+	const processHeadHtml =
+		'<button type="button" class="activity-process" data-expandable="process" aria-expanded="false">' +
+		'<span class="activity-process-icon" data-glyph="sparkles" aria-hidden="true"></span>' +
+		`<span class="activity-process-label">${escapeHtml(processLabel)}</span>` +
+		(processNote ? `<span class="activity-process-note">${escapeHtml(processNote)}</span>` : "") +
+		'<span class="activity-process-caret" data-glyph="chevron" aria-hidden="true"></span>' +
+		"</button>";
 	const sections: AssistantMessageSection[] = [];
+	// The first activity item of the message carries the only handle.
+	let processHeadDone = false;
 	let activityOrdinal = 0;
 	let contentOrdinal = 0;
 	let thinkingIndex = 0;
@@ -484,21 +566,27 @@ export function assistantMessageSections(
 		isFollowedByText = false,
 		isActiveThinking = false,
 	): void => {
+		const isHead = !processHeadDone;
+		processHeadDone = true;
 		const key = `activity-${activityOrdinal}`;
 		const relationshipClass = isFollowedByText ? " thinking-before-text" : "";
 		const activeClass = isActiveThinking ? " is-active-thinking" : "";
 		const className = `activity-timeline ${kind}-activity${relationshipClass}${activeClass}`;
 		const cacheKey = `${messageKey}:${activityOrdinal}:${streaming ? 1 : 0}:${deferStreamingTextHtml ? 1 : 0}`;
-		const cacheSignature = `${className}:${signature}`;
+		// The head marker changes the wrapper, so it belongs in the signature: the
+		// item that carries the handle and one that does not must not share a cache
+		// entry.
+		const cacheSignature = `${className}:${isHead ? 1 : 0}:${signature}`;
+		const wrap = (body: string): string =>
+			`<div class="${className}" data-process${isHead ? ' data-process-head="true"' : ""}>${isHead ? processHeadHtml : ""}${body}</div>`;
 		let cached = activitySectionCache.get(cacheKey);
 		if (cached?.signature !== cacheSignature) {
 			const body = render();
-			const html = `<div class="${className}">${body}</div>`;
-			cached = { signature: cacheSignature, body, hash: contentHash(html) };
+			cached = { signature: cacheSignature, body, hash: contentHash(wrap(body)) };
 			setActivitySectionCache(cacheKey, cached);
 		}
 
-		const html = `<div class="${className}">${cached.body}</div>`;
+		const html = wrap(cached.body);
 		const hash =
 			streamText === undefined
 				? cached.hash
@@ -558,7 +646,8 @@ export function assistantMessageSections(
 			if (!group) continue;
 			const thinkingKey = `${messageKey}-thinking-${thinkingIndex}`;
 			const streamingState = streaming ? " streaming" : "";
-			const expanded = Boolean(expandedThinkingKeys?.has(thinkingKey));
+		// Hidden unless the controller says the reader opened this one.
+		const expanded = isThinkingExpanded ? isThinkingExpanded(thinkingKey) : false;
 			const rawThinking = expanded ? group.text : "";
 			const streamText = streaming && expanded ? rawThinking : undefined;
 			const omitThinkingText = Boolean(
@@ -768,16 +857,24 @@ function toolCallHtml(
 	// against, and its ink is held back while the call runs, so the word appears
 	// exactly when the border stops breathing without the line ever moving.
 	const hint = '<span class="tool-hint">output</span>';
+	// Elapsed time rides ahead of the hint while the call runs. It is written as
+	// a data attribute and updated in place by the one-second ticker, never
+	// through the render signature: a counter that forced a re-render every
+	// second would rebuild the very node it is printed in.
+	const trail =
+		status === "running" && live && live.startedAt > 0
+			? `<span class="tool-elapsed" data-started-at="${live.startedAt}">${escapeHtml(runningElapsedLabel(live.startedAt, Date.now()))}</span>${hint}`
+			: hint;
 	const statusNote = `<span class="sr-only">${escapeHtml(`${friendlyToolName(name)}: ${toolStatusLabel(status)}`)}</span>`;
 	if (!hasBody) {
-		const header = toolHeaderParts(name, args, hint);
+		const header = toolHeaderParts(name, args, trail);
 		return `<div class="activity-item tool-call ${status}" title="${escapeHtml(header.title)}">${statusNote}${header.html}</div>`;
 	}
 	// The collapsed hot path carries only the header. Large output and diffs are
 	// materialized by the delegated click handler when the reader asks to expand.
 	// Avoid even counting lines here: tool_end must remain constant-time with
 	// respect to result size so the next assistant text frame is never delayed.
-	const header = toolHeaderParts(name, args, hint);
+	const header = toolHeaderParts(name, args, trail);
 	// `title` is the pointer's way back to what the collapsed line clipped.
 	return `<div class="activity-item tool-call ${status} expandable" data-tool-key="${escapeHtml(id)}" data-tool-body="lazy" data-expandable="tool" role="button" tabindex="0" aria-expanded="false" title="${escapeHtml(header.title)}">${statusNote}${header.html}</div>`;
 }
@@ -839,15 +936,15 @@ const MAX_TOOL_TARGET_LENGTH = 2000;
  *
  * The header keeps its 2000-character preview, but `title` holds the original
  * command or path, so a clipped or truncated one can still be inspected. The
- * clip is a collapsed-state rule only:
- * expanding restores the wrapping line unchanged, and every collapsed box clips
- * — a header that stayed wrapped until the first output chunk landed used to
- * change height in the middle of a run.
+ * clip is a collapsed-state rule only: expanding restores the wrapping line
+ * unchanged, and every collapsed box clips — a header that stayed wrapped
+ * until the first output chunk landed used to change height in the middle of a
+ * run.
  */
 function toolHeaderParts(
 	name: string,
 	args: JsonRecord,
-	hint: string,
+	trail: string,
 ): { html: string; title: string } {
 	// The trail rides the row's right edge, never its start: the header text
 	// keeps the space to its left and ellipsises into it, so the clip offset is
@@ -855,8 +952,13 @@ function toolHeaderParts(
 	if (name === "bash") {
 		const command = stringValue(args.command);
 		const preview = `$ ${truncate(command, MAX_TOOL_TARGET_LENGTH)}`;
+		// The command is quoted only while the box is open. Closed, the row says
+		// what the step was, never the pipeline it ran: a working agent shells out
+		// constantly, and a transcript that repeats every one of those pipelines is
+		// unreadable. `title` still holds the command, so a hover answers "which
+		// one was this" without opening anything.
 		return {
-			html: `<div class="tool-command"><span class="header-text">${escapeHtml(preview)}</span><span class="header-trail">${hint}</span></div>`,
+			html: `<div class="tool-command"><span class="tool-command-name">运行命令</span><span class="header-text">${escapeHtml(preview)}</span><span class="header-trail">${trail}</span></div>`,
 			title: `$ ${command}`,
 		};
 	}
@@ -865,7 +967,7 @@ function toolHeaderParts(
 		? ` <span class="tool-path">${escapeHtml(truncate(target, MAX_TOOL_TARGET_LENGTH))}</span>`
 		: "";
 	return {
-		html: `<div class="tool-header"><span class="header-text"><span class="tool-name">${escapeHtml(name)}</span>${targetHtml}</span><span class="header-trail">${hint}</span></div>`,
+		html: `<div class="tool-header"><span class="header-text"><span class="tool-name">${escapeHtml(name)}</span>${targetHtml}</span><span class="header-trail">${trail}</span></div>`,
 		title: target ? `${name} ${target}` : name,
 	};
 }

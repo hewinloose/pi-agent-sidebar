@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+﻿import { stat } from "node:fs/promises";
 import path from "node:path";
 import * as vscode from "vscode";
 import { AsyncQueue } from "./asyncQueue.js";
@@ -60,6 +60,17 @@ import {
 	WorkspaceResources,
 } from "../services/workspaceResources.js";
 import { WorkspaceFileSearch } from "../services/workspaceFileSearch.js";
+import {
+	activeBranch,
+	activeLeafId,
+	loadSessionDocument,
+	planDeletePrompt,
+	planHoldsUserTurn,
+	planTruncateFromPrompt,
+	rewrittenSessionPath,
+	withNewIdentity,
+	writeSessionDocument,
+} from "../services/sessionHistory.js";
 import { TranscriptMedia } from "../services/transcriptMedia.js";
 import { ExtensionUiController } from "./extensionUiController.js";
 import { WebviewMessageRouter } from "./webviewMessageRouter.js";
@@ -234,6 +245,10 @@ export class PiViewProvider
 			},
 			onSwitchSession: (sessionPath) => this.switchSession(sessionPath),
 			onDeleteSession: (sessionPath) => this.deleteSession(sessionPath),
+			onDeletePrompt: (promptOrdinal, text) => this.deletePrompt(promptOrdinal, text),
+			onEditPrompt: (promptOrdinal, text, newText) => this.editPrompt(promptOrdinal, text, newText),
+			onRegeneratePrompt: (promptOrdinal, text) => this.regeneratePrompt(promptOrdinal, text),
+			onForkPrompt: (promptOrdinal, text) => this.forkPrompt(promptOrdinal, text),
 			onRenameSession: (name) => this.applySessionName(name),
 			onSetModel: (provider, modelId) => this.setModel(provider, modelId),
 			onSetThinking: (level) => this.setThinkingLevel(level),
@@ -556,6 +571,28 @@ export class PiViewProvider
 		item.show();
 	}
 
+	/**
+	 * Starts a new session on the running client and refreshes the view.
+	 *
+	 * Shared by the "new session" command and by a history rewrite that would
+	 * otherwise leave a conversation with no user turn: pi refuses to open such a
+	 * file (its own session loader throws "Invalid array length"), so the empty
+	 * result has to be a fresh session rather than a truncated one.
+	 */
+	private async startFreshSession(client: PiRpcClient, generation: number): Promise<void> {
+		const previous = this.sessionIdentity(
+			parsePiState(await client.request({ type: "get_state" })),
+		);
+		this.assertSessionMutationContext(client, generation);
+		const result = parseSessionChangeResult(await client.request({ type: "new_session" }));
+		this.assertSessionMutationContext(client, generation);
+		if (result.cancelled)
+			throw new SessionMutationCancelledError("New session was cancelled by a pi extension.");
+		await this.waitForSessionReplacement(client, generation, previous);
+		await this.refreshSnapshot();
+		await this.sendSessionList();
+	}
+
 	public async createNewSession(requireConfirmation = true): Promise<boolean> {
 		if (requireConfirmation && (this.state.messageCount ?? 0) > 0) {
 			const choice = await vscode.window.showWarningMessage(
@@ -572,21 +609,16 @@ export class PiViewProvider
 		return this.enqueueSessionMutation(async (generation) => {
 			const client = await this.ensureClient();
 			this.assertSessionMutationContext(client, generation);
-			const previous = this.sessionIdentity(
-				parsePiState(await client.request({ type: "get_state" })),
-			);
-			this.assertSessionMutationContext(client, generation);
-			const result = parseSessionChangeResult(
-				await client.request({ type: "new_session" }),
-			);
-			this.assertSessionMutationContext(client, generation);
-			if (result.cancelled) return false;
-			await this.waitForSessionReplacement(client, generation, previous);
+			try {
+				await this.startFreshSession(client, generation);
+			} catch (error) {
+				// A pi extension refusing the switch is a neutral outcome, not a failure.
+				if (error instanceof SessionMutationCancelledError) return false;
+				throw error;
+			}
 			this.composerReferenceStore.consume(references);
 			await this.attachmentStore.removeResolved(attachments);
 			await Promise.all([this.syncAttachments(), this.syncComposerReferences()]);
-			await this.refreshSnapshot();
-			await this.sendSessionList();
 			return true;
 		});
 	}
@@ -732,7 +764,13 @@ export class PiViewProvider
 			if (!target) {
 				throw new Error("Session is not part of this workspace.");
 			}
-			if (target.active) return;
+			// Clicking the row that is already open is the reader's only way to ask for
+			// a redraw, so refresh instead of returning into silence.
+			if (target.active) {
+				await this.refreshSnapshot();
+				await this.sendSessionList();
+				return;
+			}
 			const previous = this.sessionIdentity(previousState);
 			const result = parseSessionChangeResult(
 				await client.request({
@@ -902,31 +940,158 @@ export class PiViewProvider
 					"That prompt is no longer part of the active session branch.",
 				);
 			}
-			const previous = this.sessionIdentity(
-				parsePiState(await forkClient.request({ type: "get_state" })),
-			);
-			this.assertSessionMutationContext(forkClient, generation);
-			const result = parseSessionChangeResult(
-				await this.requestCapability(forkClient, "fork", {
-					type: "fork",
-					entryId,
-				}),
-			);
-			this.assertSessionMutationContext(forkClient, generation);
-			// pi returns the forked prompt text alongside `cancelled`, so a cancelled
-			// fork must not be mistaken for a successful one that carried text.
-			if (result.cancelled) {
-				throw new SessionMutationCancelledError(
-					"Fork was cancelled by a pi extension.",
-				);
-			}
-			await this.waitForSessionReplacement(forkClient, generation, previous);
-			await this.refreshSnapshot();
-			await this.sendSessionList();
-			if (typeof result.text === "string") {
-				await this.post({ type: "setComposerText", text: result.text });
-			}
+			await this.forkSessionAt(entryId, generation);
 		});
+	}
+
+	/**
+	 * Deletes one prompt and the turn it produced.
+	 *
+	 * pi has no history-mutation command, so this rebuilds the branch in a new
+	 * session file and switches onto it. The original file keeps every entry, so
+	 * the deletion is reversible by switching back.
+	 */
+	public async deletePrompt(promptOrdinal: number, text: string): Promise<void> {
+		await this.rewritePrompt("delete", promptOrdinal, text);
+	}
+
+	/** Rewrites one prompt and replays it; everything after it is discarded. */
+	public async editPrompt(promptOrdinal: number, text: string, newText: string): Promise<void> {
+		if (!newText.trim()) throw new Error("Enter the replacement prompt.");
+		await this.rewritePrompt("edit", promptOrdinal, text, newText);
+	}
+
+	/** Drops the reply to one prompt and asks again with the same text. */
+	public async regeneratePrompt(promptOrdinal: number, text: string): Promise<void> {
+		await this.rewritePrompt("regenerate", promptOrdinal, text);
+	}
+
+	/**
+	 * Forks at the turn a reply belongs to.
+	 *
+	 * The reader clicked a reply, but pi can only fork at a *user* prompt, so the
+	 * prompt that opens that turn is resolved from the ordinal first, and
+	 * `forkSessionAt` re-checks the session identity inside the mutation queue.
+	 */
+	public async forkPrompt(promptOrdinal: number, text: string): Promise<void> {
+		await this.enqueueSessionMutation(async (generation) => {
+			const entryId = await this.resolvePromptEntryId(generation, promptOrdinal, text);
+			await this.forkSessionAt(entryId, generation);
+		});
+	}
+
+	private async rewritePrompt(
+		kind: "delete" | "edit" | "regenerate",
+		promptOrdinal: number,
+		text: string,
+		newText?: string,
+	): Promise<void> {
+		await this.enqueueSessionMutation(async (generation) => {
+			const client = await this.ensureClient();
+			this.assertSessionMutationContext(client, generation);
+			const entryId = await this.resolvePromptEntryId(generation, promptOrdinal, text);
+			const state = parsePiState(await client.request({ type: "get_state" }));
+			this.assertSessionMutationContext(client, generation);
+			const source = state.sessionFile;
+			if (!source) throw new Error("This session is not stored on disk, so its history cannot change.");
+
+			const document = await loadSessionDocument(source);
+			const plan =
+				kind === "delete"
+					? planDeletePrompt(document, entryId)
+					: planTruncateFromPrompt(document, entryId);
+			if (!planHoldsUserTurn(plan)) {
+				// pi cannot open a session that holds no user turn, so a rewrite that
+				// leaves none is expressed as a fresh session instead of a file.
+				this.output.appendLine(`[session] ${kind} leaves no turn; started a new session`);
+				await this.startFreshSession(client, generation);
+			} else {
+				const target = rewrittenSessionPath(source);
+				await writeSessionDocument(target, withNewIdentity(plan, source));
+				this.output.appendLine(`[session] ${kind} rewrote the session into ${path.basename(target)}`);
+				await this.activateSessionFile(client, generation, target);
+			}
+			if (kind === "delete") return;
+
+			// Replay through pi rather than hand-writing the user entry: pi owns
+			// the message shape, the model choice and the usage accounting.
+			await client.request({
+				type: "prompt",
+				message: kind === "edit" ? (newText ?? text) : text,
+			});
+		});
+	}
+
+	/**
+	 * Maps the ordinal the webview can count to pi's session entry id.
+	 *
+	 * `get_fork_messages` is the only public source of prompt entry ids, and it
+	 * returns the prompts on the active branch in order. The text is compared as
+	 * well, because the transcript is a window that may have been truncated: an
+	 * ordinal that no longer lines up must fail here rather than delete a
+	 * neighbouring turn.
+	 */
+	private async resolvePromptEntryId(
+		generation: number,
+		promptOrdinal: number,
+		text: string,
+	): Promise<string> {
+		const client = await this.ensureClient();
+		this.assertSessionMutationContext(client, generation);
+		if (!this.capabilities.isAvailable("forkMessages"))
+			throw new Error("This pi build does not expose session prompts, so history cannot be changed here.");
+		const candidates = parseForkMessagesResponse(
+			await this.requestCapability(client, "forkMessages", { type: "get_fork_messages" }),
+		);
+		this.assertSessionMutationContext(client, generation);
+		const candidate = candidates[promptOrdinal];
+		if (!candidate) throw new Error("That message is no longer part of this session.");
+		if (comparablePrompt(candidate.text) !== comparablePrompt(text)) {
+			throw new Error("That message no longer matches this session. Reload the sidebar and try again.");
+		}
+		return candidate.entryId;
+	}
+
+	/** Fork machinery shared by the picker and a reply's own action. */
+	private async forkSessionAt(entryId: string, generation: number): Promise<void> {
+		const client = await this.ensureClient();
+		this.assertSessionMutationContext(client, generation);
+		if (!this.capabilities.isAvailable("fork"))
+			throw new Error("This pi build does not support forking sessions.");
+		const previous = this.sessionIdentity(parsePiState(await client.request({ type: "get_state" })));
+		this.assertSessionMutationContext(client, generation);
+		const result = parseSessionChangeResult(
+			await this.requestCapability(client, "fork", { type: "fork", entryId }),
+		);
+		this.assertSessionMutationContext(client, generation);
+		if (result.cancelled) throw new SessionMutationCancelledError("Fork was cancelled by a pi extension.");
+		await this.waitForSessionReplacement(client, generation, previous);
+		await this.refreshSnapshot();
+		await this.sendSessionList();
+		if (typeof result.text === "string") await this.post({ type: "setComposerText", text: result.text });
+	}
+
+	/**
+	 * Switches pi onto a session file this extension just wrote.
+	 *
+	 * Deliberately not `switchSession()`: that one validates the path against a
+	 * freshly listed set and takes the mutation queue itself, which would deadlock
+	 * inside the caller that already holds it. The file here is a sibling of the
+	 * one pi is holding, so it is already inside the workspace's session store.
+	 */
+	private async activateSessionFile(
+		client: PiRpcClient,
+		generation: number,
+		sessionFile: string,
+	): Promise<void> {
+		const previous = this.sessionIdentity(parsePiState(await client.request({ type: "get_state" })));
+		this.assertSessionMutationContext(client, generation);
+		// `sessionPath`, not `path`: pi reads the field by that name, and anything
+		// else reaches it as `undefined` and dies inside its own path handling.
+		await client.request({ type: "switch_session", sessionPath: sessionFile });
+		await this.waitForSessionReplacement(client, generation, previous, sessionFile);
+		await this.refreshSnapshot();
+		await this.sendSessionList();
 	}
 
 	/**
@@ -1165,8 +1330,12 @@ export class PiViewProvider
 			const lastSession = this.context.workspaceState.get<string>(
 				this.sessionStorageKey(folder),
 			);
-			if (lastSession && (await fileExists(lastSession)))
-				args.push("--session", lastSession);
+			if (
+					lastSession &&
+					(await fileExists(lastSession)) &&
+					(await isOpenableSession(lastSession))
+				)
+					args.push("--session", lastSession);
 		}
 		if (generation !== this.workspaceGeneration) return;
 
@@ -1328,6 +1497,9 @@ export class PiViewProvider
 			// pi's own accounting, and this one has to describe what this snapshot left
 			// out regardless of how pi counts.
 			omittedMessageCount: window.omittedCount,
+			// History actions address prompts from the start of the session, and
+			// the webview can only count the ones inside its window.
+			omittedPromptCount: window.omittedPromptCount,
 			// The window dropped the prompt the title is derived from; the webview
 			// cannot see it and this host can.
 			titleSeed: window.titleSeed,
@@ -1759,6 +1931,24 @@ function singleLine(text: string, maxLength = 300): string {
 		: collapsed;
 }
 
+/**
+ * Whether pi will be able to open this session file.
+ *
+ * Restoring one it cannot leaves the sidebar dead on arrival: a branch that does
+ * not walk from its leaf, or one with no user turn, makes pi's own loader throw.
+ * A read here is cheap next to a window that has to be reloaded twice.
+ */
+async function isOpenableSession(sessionPath: string): Promise<boolean> {
+	try {
+		const document = await loadSessionDocument(sessionPath);
+		const leaf = activeLeafId(document);
+		if (!leaf) return false;
+		return planHoldsUserTurn({ header: document.header, entries: activeBranch(document, leaf) });
+	} catch {
+		return false;
+	}
+}
+
 async function fileExists(filePath: string): Promise<boolean> {
 	try {
 		await stat(filePath);
@@ -1770,4 +1960,15 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 function toErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Prompt text as pi stores it versus as the transcript shows it.
+ *
+ * Whitespace is collapsed because a multi-line prompt is stored with its line
+ * breaks while the rendered row clips it, and a trailing newline must not be
+ * enough to reject a correct match.
+ */
+function comparablePrompt(text: string): string {
+	return text.replace(/\s+/gu, " ").trim();
 }

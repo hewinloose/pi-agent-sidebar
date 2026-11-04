@@ -6,6 +6,7 @@ import { createSessionPanels } from "./session/panels.js";
 import { SessionController } from "./session/controller.js";
 import DOMPurify from "dompurify";
 import { formatComposerReferenceLocation } from "../shared/composerReferences.js";
+import { contentText } from "../shared/messageContent.js";
 import { RpcEventReducer } from "./rpcEventReducer.js";
 import { HostMessageHandler } from "./hostMessageHandler.js";
 import { handleImagePaste } from "./attachments/imagePaste.js";
@@ -15,6 +16,7 @@ import { ComposerFocusRequests } from "./composer/focusRequest.js";
 import { MentionController } from "./composer/mentions.js";
 import { createTranscriptDom } from "./transcript/dom.js";
 import { TranscriptController, hasEquivalentTail } from "./transcript/controller.js";
+import { runningElapsedLabel } from "./transcript/toolDuration.js";
 import {
 	formatAbsoluteTime,
 	formatRelativeTime,
@@ -43,6 +45,7 @@ import { SelectController } from "./ui/selectController.js";
 import { ModalController } from "./ui/modalController.js";
 import {
 	MAX_COMPOSER_REFERENCE_COUNT,
+	MAX_MESSAGE_LENGTH,
 	type HostToWebviewMessage,
 	type JsonRecord,
 	type PiCommand,
@@ -795,6 +798,14 @@ window.addEventListener("resize", () => {
 
 elements.messages.addEventListener("click", (event) => {
 	const target = event.target as HTMLElement;
+	// Row actions come before everything else: the buttons live inside the row,
+	// and a click on one must not also start a drag-select or follow a path.
+	const messageAction = target.closest<HTMLElement>("[data-message-action]");
+	if (messageAction) {
+		event.preventDefault();
+		handleMessageAction(messageAction);
+		return;
+	}
 	const copyButton = target.closest<HTMLButtonElement>("[data-copy-code]");
 	if (copyButton) {
 		const code =
@@ -1008,6 +1019,22 @@ function handleActionResult(
 		showToast("Session forked", "info");
 		announcer.announce("Session forked");
 	}
+	if (ok && !cancelled && action?.type === "deletePrompt") {
+		showToast("Message deleted", "info");
+		announcer.announce("Message deleted");
+	}
+	if (ok && !cancelled && action?.type === "editPrompt") {
+		showToast("Prompt updated and re-run", "info");
+		announcer.announce("Prompt updated and re-run");
+	}
+	if (ok && !cancelled && action?.type === "regeneratePrompt") {
+		showToast("Regenerating", "info");
+		announcer.announce("Regenerating");
+	}
+	if (ok && !cancelled && action?.type === "forkPrompt") {
+		showToast("Branched from that reply", "info");
+		announcer.announce("Branched from that reply");
+	}
 	// The generic error toast below explains the failure; the picker closes because
 	// it has no list to show and its entry ids were never delivered.
 	if (!ok && action?.type === "listForkCandidates") dismissForkPicker();
@@ -1145,6 +1172,8 @@ function render(): void {
 
 	// Pin only after all regions finish writing DOM and refreshing time labels.
 	refreshRelativeTimes();
+	// Cheap when nothing is running: one query that returns no nodes.
+	refreshElapsedLabels();
 	scrollAnchor.stickToBottomIfFollowing();
 	syncJumpToBottomButton();
 	scheduleTranscriptMeasure();
@@ -1353,6 +1382,46 @@ function scheduleRelativeTimeRefresh(epochValues: readonly number[]): void {
 		relativeTimeTimer = undefined;
 		refreshRelativeTimes();
 	}, delay);
+}
+
+let elapsedTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Keeps running tool labels counting.
+ *
+ * Deliberately separate from `refreshRelativeTimes`: that one wakes at the next
+ * label boundary, which can be an hour away, while a running call wants a
+ * one-second cadence. The text is rewritten in place and never through the
+ * render signature — the renderer would otherwise rebuild, once per second, the
+ * very node the label lives in. A call shorter than `ELAPSED_MIN_MS` shows
+ * nothing, and an idle transcript schedules no timer at all: the query returns
+ * no nodes, and a settled card drops its label.
+ */
+function refreshElapsedLabels(): void {
+	if (document.hidden) return;
+	const nodes = document.querySelectorAll<HTMLElement>("[data-started-at]");
+	if (nodes.length === 0) {
+		if (elapsedTimer !== undefined) {
+			clearTimeout(elapsedTimer);
+			elapsedTimer = undefined;
+		}
+		return;
+	}
+	// Both ends of this difference are this clock: `startedAt` is stamped with
+	// `Date.now()` when the event arrives. `hostNow()` would add the host's skew to
+	// a duration that never touches the host.
+	const now = Date.now();
+	for (const node of nodes) {
+		node.textContent = runningElapsedLabel(Number(node.dataset.startedAt), now);
+	}
+	// Never restart a pending countdown: streaming renders several frames a
+	// second, and resetting here would starve the timer the label depends on.
+	if (elapsedTimer === undefined) {
+		elapsedTimer = setTimeout(() => {
+			elapsedTimer = undefined;
+			refreshElapsedLabels();
+		}, 1000);
+	}
 }
 
 
@@ -1855,6 +1924,10 @@ function runAction(
 		| "forkSession"
 		| "switchSession"
 		| "deleteSession"
+		| "deletePrompt"
+		| "editPrompt"
+		| "regeneratePrompt"
+		| "forkPrompt"
 		| "renameSession"
 		| "setModel"
 		| "setThinking"
@@ -1881,6 +1954,102 @@ function runAction(
 	const { stagedReferenceId: _stagedReferenceId, ...outgoingFields } = fields;
 	post({ type, actionId, ...outgoingFields } as WebviewToHostMessage);
 	return actionId;
+}
+
+/**
+ * Runs one of the row actions the transcript renders.
+ *
+ * The prompt text travels with the ordinal so the host can refuse a stale
+ * mapping instead of acting on the wrong turn: the transcript is a window onto
+ * the session, and the session may have moved since it was drawn.
+ */
+function handleMessageAction(element: HTMLElement): void {
+	const action = element.dataset.messageAction;
+	const ordinal = Number(element.dataset.promptOrdinal);
+	if (!action || !Number.isInteger(ordinal) || ordinal < 0) return;
+	if (ui.busy || ui.state.isStreaming === true) {
+		showToast("Wait for pi to finish before changing history", "error");
+		return;
+	}
+	const text = promptTextFor(ordinal);
+	if (text === undefined) {
+		showToast("That message is no longer in view", "error");
+		return;
+	}
+	if (action === "delete") {
+		modalController.openTextPrompt({
+			title: "删除消息",
+			label: describeDeletedPrompt(text),
+			initialValue: "",
+			confirmLabel: "删除",
+			cancelLabel: "取消",
+			onSubmit: (value) => {
+				if (value.trim() !== DELETE_PROMPT_CONFIRMATION) {
+					showToast("未删除", "info");
+					return;
+				}
+				runAction("deletePrompt", { promptOrdinal: ordinal, text });
+			},
+		});
+		return;
+	}
+	if (action === "edit") {
+		modalController.openTextPrompt({
+			title: "编辑并重新发送",
+			label: "这条消息之后的内容会被新的回复替换。",
+			initialValue: text,
+			confirmLabel: "重试",
+			cancelLabel: "取消",
+			maxLength: MAX_MESSAGE_LENGTH,
+			onSubmit: (value) => {
+				// No "did the text change" check, deliberately: PI-Desktop's form only
+				// refuses an empty one, and submitting the same text re-runs the prompt,
+				// which is a legitimate thing to want.
+				const next = value.trim();
+				if (!next) return;
+				runAction("editPrompt", { promptOrdinal: ordinal, text, newText: next });
+			},
+		});
+		return;
+	}
+	if (action === "regenerate") runAction("regeneratePrompt", { promptOrdinal: ordinal, text });
+	else if (action === "fork") runAction("forkPrompt", { promptOrdinal: ordinal, text });
+}
+
+/** The prompt text behind a session-wide ordinal, or nothing when it is out of view. */
+function promptTextFor(ordinal: number): string | undefined {
+	let next = ui.omittedPromptCount;
+	for (const message of ui.messages) {
+		if (message.role !== "user") continue;
+		if (next === ordinal) return contentText(message.content);
+		next += 1;
+	}
+	return undefined;
+}
+
+/** How much of a prompt a dialog label quotes back. */
+const PROMPT_PREVIEW_LENGTH = 60;
+
+/** The word the delete confirmation asks for, so a stray Enter cannot delete a turn. */
+const DELETE_PROMPT_CONFIRMATION = "删除";
+
+/**
+ * The reader-facing copy of a prompt, clipped for a dialog label.
+ *
+ * The `<pi-context>` block is stripped the way the row strips it: the dialog is
+ * about the words the reader typed, not the context injected above them.
+ */
+function truncateForPrompt(text: string, max = PROMPT_PREVIEW_LENGTH): string {
+	const visible = text.replace(/^<pi-context>[\s\S]*?<\/pi-context>\s*/u, "");
+	const single = visible.replace(/\s+/gu, " ").trim();
+	return single.length <= max ? single : `${single.slice(0, max - 1)}…`;
+}
+
+/** What the delete confirmation says about the message it is about to remove. */
+function describeDeletedPrompt(text: string): string {
+	const preview = truncateForPrompt(text);
+	const consequence = preview ? `回复「${preview}」会一并删除。` : "这条消息的回复会一并删除。";
+	return `${consequence}输入「${DELETE_PROMPT_CONFIRMATION}」确认。`;
 }
 
 function post(message: WebviewToHostMessage): void {

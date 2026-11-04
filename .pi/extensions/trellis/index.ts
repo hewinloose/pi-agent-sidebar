@@ -47,6 +47,15 @@ interface SubagentInput {
   prompts?: string[];
   model?: string;
   thinking?: string;
+  /**
+   * How long the caller is willing to wait, in seconds.
+   *
+   * The caller decides: it is the one that knows whether a slow run is still
+   * worth waiting for. A blocking tool cannot be interrupted from outside — pi's
+   * own abort only waits for the session to go idle — so the deadline has to be
+   * handed in here and enforced by killing the child process.
+   */
+  timeoutSeconds?: number;
 }
 interface AgentConfig {
   model?: string;
@@ -100,6 +109,8 @@ const MAX_LINE_BUFFER = 1024 * 1024;
 const MAX_TOOL_ARG_CHARS = 2048;
 const MAX_TOOLS = 256;
 const MAX_PARALLEL_PROMPTS = 6;
+const DEFAULT_SUBAGENT_TIMEOUT_S = 600;
+const MAX_SUBAGENT_TIMEOUT_S = 900;
 const ABORT_KILL_GRACE_MS = 1500;
 const SESSION_OVERVIEW_TIMEOUT_MS = 1500;
 const THROTTLE_MS = 500;
@@ -115,7 +126,7 @@ This notice is one-shot: do not repeat it after the first visible assistant repl
 </first-reply-notice>`;
 
 // ── State types ───────────────────────────────────────────────────────
-type RunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
+type RunStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled" | "timeout";
 type ToolStatus = "running" | "succeeded" | "failed";
 
 interface Usage {
@@ -134,6 +145,8 @@ interface ToolTrace {
   status: ToolStatus;
   startedAt: number;
   finishedAt?: number;
+  /** Set when the caller's deadline killed this run; the output is partial. */
+  timedOutAt?: number;
 }
 interface RunState {
   id: string;
@@ -1270,6 +1283,19 @@ function normalizeAgent(agent: string | undefined): string {
   return name.startsWith("trellis-") ? name : `trellis-${name}`;
 }
 
+/**
+ * The caller's deadline, bounded.
+ *
+ * Clamped rather than rejected: a caller that asks for an hour still gets a
+ * stopping point, and one that asks for nothing gets the default instead of
+ * running forever.
+ */
+function clampTimeoutSeconds(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    return DEFAULT_SUBAGENT_TIMEOUT_S;
+  return Math.min(Math.floor(value), MAX_SUBAGENT_TIMEOUT_S);
+}
+
 function isTrellisAgent(root: string, agent: string): boolean {
   return existsSync(join(root, ".pi", "agents", `${agent}.md`));
 }
@@ -1517,6 +1543,7 @@ function runPi(
   key?: string | null,
   signal?: AbortSignal,
   parentSessionId?: string | null,
+  timeoutMs?: number,
 ): Promise<{ output: string; failed: boolean }> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
@@ -1541,6 +1568,8 @@ function runPi(
     let settled = false;
     let aborted = false;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
+    let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
     const abort = () => {
       aborted = true;
       cli.kill();
@@ -1553,6 +1582,7 @@ function runPi(
       if (settled) return;
       settled = true;
       if (killTimer) clearTimeout(killTimer);
+      if (deadlineTimer) clearTimeout(deadlineTimer);
       signal?.removeEventListener("abort", abort);
       emit();
       resolve(v);
@@ -1560,6 +1590,17 @@ function runPi(
     signal?.addEventListener("abort", abort, { once: true });
     state.status = "running";
     state.startedAt = Date.now();
+    // The caller's deadline, not a guess made here. Killing the process is the
+    // only way to stop a run from outside: the tool is blocking, so the caller
+    // cannot regain control to abort it, and pi's abort command would only wait
+    // for the session to go idle — which is this very run.
+    if (timeoutMs !== undefined && timeoutMs > 0) {
+      deadlineTimer = setTimeout(() => {
+        timedOut = true;
+        abort();
+      }, timeoutMs);
+      deadlineTimer.unref?.();
+    }
     emit();
     const processLine = (line: string) => {
       const evt = parseJsonEvent(line);
@@ -1597,6 +1638,16 @@ function runPi(
       const err = stderr.toString();
       state.stderrTail = appendTail("", err, MAX_TAIL);
       state.finishedAt = Date.now();
+      if (timedOut) {
+        // Partial output, not a failure of the work: the run was still going
+        // when the caller's deadline expired, and whatever it produced so far
+        // is still the answer to "what did it find before we stopped it".
+        state.status = "timeout";
+        state.timedOutAt = state.finishedAt;
+        state.errorMessage = "Stopped at the caller's deadline — this run did not finish.";
+        done({ output: finalize(state, state.errorMessage), failed: false });
+        return;
+      }
       if (aborted) {
         state.status = "cancelled";
         state.errorMessage = "cancelled";
@@ -1642,6 +1693,13 @@ async function runSubagent(
     inheritedModel,
   );
   const mode = input.mode ?? "single";
+  const timeoutSeconds = clampTimeoutSeconds(input.timeoutSeconds);
+  // The caller's deadline covers the whole run, not each child. A chain of six
+  // prompts must not be able to hold the turn for six times the budget: every
+  // child is handed whatever is left, and an exhausted budget stops the next
+  // one immediately instead of running it unbounded.
+  const deadlineAt = Date.now() + timeoutSeconds * 1000;
+  const remainingMs = () => Math.max(deadlineAt - Date.now(), 1);
   const startedAt = Date.now();
   const details: ProgressDetails = {
     kind: "trellis-subagent-progress",
@@ -1700,6 +1758,7 @@ async function runSubagent(
             key,
             signal,
             parentSessionId,
+            remainingMs(),
           ),
         ),
       );
@@ -1733,6 +1792,7 @@ async function runSubagent(
           key,
           signal,
           parentSessionId,
+          remainingMs(),
         );
         prev = result.output;
         failed = failed || result.failed;
@@ -1753,6 +1813,7 @@ async function runSubagent(
       key,
       signal,
       parentSessionId,
+      remainingMs(),
     );
     return finish(result.output, result.failed);
   } catch (e) {
@@ -1902,6 +1963,11 @@ export default function trellisExtension(pi: {
           description:
             "Optional Pi thinking level override for the child sub-agent process.",
           enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        },
+        timeoutSeconds: {
+          type: "number",
+          description:
+            "How long you are willing to wait for this run, in seconds. The run is killed at the deadline and whatever it produced so far is returned. Default 600, maximum 900. Raise it for work you know is slow; lower it when a stalled child should not hold the turn.",
         },
       },
     },

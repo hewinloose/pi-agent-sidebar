@@ -25,7 +25,7 @@ export interface UiState extends TranscriptState {
 export function createUiState(): UiState {
  return {
   connection: "starting", connectionDetail: "Starting pi...", workspaceName: "",
-  state: {}, messages: [], omittedMessageCount: 0, titleSeed: "", streamingIndex: 0,
+  state: {}, messages: [], omittedMessageCount: 0, omittedPromptCount: 0, titleSeed: "", streamingIndex: 0,
   models: [], thinkingLevels: ["off"], commands: [], attachments: [], sessions: [],
   capabilities: { clone: true, fork: true, forkMessages: true },
   timeContext: { locale: "", hostNowMs: 0 }, clockSkewMs: 0,

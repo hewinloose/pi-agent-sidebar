@@ -414,9 +414,11 @@ const SAMPLE_FIELDS = {
 	provider: "anthropic",
 	modelId: "claude-sonnet-4-5",
 	entryId: "entry-1",
+	promptOrdinal: 0,
 	path: "/workspace/src/app.ts",
 	uri: "file:///workspace/src/app.ts",
 	href: "https://example.com/docs",
+	newText: "edited prompt",
 	query: "src",
 	sources: ["/workspace/diagram.png"],
 	resources: ["/workspace/notes.md"],
@@ -448,6 +450,10 @@ const VALID_PAYLOADS = {
 	forkSession: ["actionId", "entryId"],
 	switchSession: ["actionId", "path"],
 	deleteSession: ["actionId", "path"],
+	deletePrompt: ["actionId", "promptOrdinal", "text"],
+	editPrompt: ["actionId", "promptOrdinal", "text", "newText"],
+	regeneratePrompt: ["actionId", "promptOrdinal", "text"],
+	forkPrompt: ["actionId", "promptOrdinal", "text"],
 	renameSession: ["actionId", "name"],
 	setModel: ["actionId", "provider", "modelId"],
 	setThinking: ["actionId", "level"],
@@ -502,6 +508,55 @@ test("the parser rejects an unknown message type", async () => {
 			loaded.module.parseWebviewMessage({ type: "notARealMessage" }),
 			undefined,
 		);
+	} finally {
+		await loaded.dispose();
+	}
+});
+
+test("prompt history actions carry an ordinal and any text, including none", async () => {
+	const loaded = await loadProtocol();
+	try {
+		const { parseWebviewMessage } = loaded.module;
+		// A prompt that carried only an image stores no text; the ordinal is still
+		// the cursor, so an empty string has to survive rather than be dropped as a
+		// malformed message the host never hears about.
+		assert.deepEqual(
+			parseWebviewMessage({ type: "deletePrompt", actionId: "action", promptOrdinal: 2, text: "" }),
+			{ type: "deletePrompt", actionId: "action", promptOrdinal: 2, text: "" },
+		);
+		assert.deepEqual(
+			parseWebviewMessage({
+				type: "editPrompt",
+				actionId: "action",
+				promptOrdinal: 0,
+				text: "",
+				newText: "replacement",
+			}),
+			{ type: "editPrompt", actionId: "action", promptOrdinal: 0, text: "", newText: "replacement" },
+		);
+		// An edit still has to say what to send.
+		assert.equal(
+			parseWebviewMessage({
+				type: "editPrompt",
+				actionId: "action",
+				promptOrdinal: 0,
+				text: "",
+				newText: "",
+			}),
+			undefined,
+		);
+		for (const invalid of [
+			{ promptOrdinal: -1, text: "hello" },
+			{ promptOrdinal: 1.5, text: "hello" },
+			{ promptOrdinal: 0 },
+			{ text: "hello" },
+			{ promptOrdinal: 0, text: 42 },
+		]) {
+			assert.equal(
+				parseWebviewMessage({ type: "regeneratePrompt", actionId: "action", ...invalid }),
+				undefined,
+			);
+		}
 	} finally {
 		await loaded.dispose();
 	}

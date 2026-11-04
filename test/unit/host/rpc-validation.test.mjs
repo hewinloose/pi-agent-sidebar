@@ -511,3 +511,30 @@ test("command validation rejects malformed envelopes and oversized fields", asyn
 		await loaded.dispose();
 	}
 });
+
+test("the message window reports the prompts it dropped", async () => {
+	const loaded = await loadValidation();
+	try {
+		const { parseMessagesWindow } = loaded.module;
+		const messages = [
+			{ role: "user", content: "one", timestamp: 1 },
+			{ role: "assistant", content: "reply one", timestamp: 2 },
+			{ role: "assistant", content: "more of reply one", timestamp: 3 },
+			{ role: "user", content: "two", timestamp: 4 },
+			{ role: "assistant", content: "reply two", timestamp: 5 },
+		];
+
+		// History actions count prompts from the start of the session, so a window
+		// that dropped a prompt has to say how many, or every ordinal it renders
+		// names the wrong turn.
+		const window = parseMessagesWindow({ messages }, 3);
+		assert.equal(window.omittedCount, 2);
+		assert.equal(window.omittedPromptCount, 1);
+		assert.equal(window.titleSeed, "one");
+
+		// A window that covers the list owes no offset at all.
+		assert.equal(parseMessagesWindow({ messages }, 5).omittedPromptCount, 0);
+	} finally {
+		await loaded.dispose();
+	}
+});

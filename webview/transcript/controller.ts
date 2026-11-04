@@ -15,6 +15,8 @@ export interface TranscriptState {
  streamingMessage?: PiMessage;
  streamingIndex: number;
  omittedMessageCount: number;
+ /** Prompts the host dropped ahead of `messages`; offsets every history action. */
+ omittedPromptCount: number;
  timeContext: { locale: string };
 }
 
@@ -23,7 +25,16 @@ export interface MessageRenderContext {
  omitted: number;
  resultMap: ReadonlyMap<string, PiMessage>;
  separatorLabels: ReadonlyMap<string, string>;
+ /**
+  * Session-wide ordinal of the prompt that opens each message's turn.
+  *
+  * History actions address prompts from the start of the session, while the
+  * transcript only holds a window, so the ordinal cannot be derived from the
+  * rendered list alone.
+  */
+ promptOrdinals: ReadonlyMap<string, number>;
 }
+
 
 export interface TranscriptControllerOptions {
  state: TranscriptState;
@@ -43,7 +54,7 @@ export interface TranscriptControllerOptions {
 export class TranscriptController {
  readonly liveTools = new Map<string, RpcEventLiveTool>();
  readonly toolResults = new Map<string, PiMessage>();
- readonly expandedThinkingKeys = new Set<string>();
+ private readonly thinkingChoices = new Map<string, boolean>();
  readonly playback: StreamingMessagePlayback;
  private readonly view: TranscriptView<Element>;
  private readonly window = new ProgressiveWindow({ threshold: 60, initial: 40, chunk: 40 });
@@ -55,9 +66,10 @@ export class TranscriptController {
 
  constructor(private readonly options: TranscriptControllerOptions) {
   this.playback = new StreamingMessagePlayback({
-   shouldAnimateThinking: (message, index) => this.expandedThinkingKeys.has(
-    `${this.messageKey(message)}-thinking-${thinkingGroupKeyIndex(messageBlocks(this.playback.target ?? message), index)}`,
-   ),
+   shouldAnimateThinking: (message, index) =>
+    this.isThinkingExpanded(
+     `${this.messageKey(message)}-thinking-${thinkingGroupKeyIndex(messageBlocks(this.playback.target ?? message), index)}`,
+    ),
   });
   this.view = new TranscriptView<Element>({
    container: options.container,
@@ -69,6 +81,27 @@ export class TranscriptController {
  }
 
  messageKey(message: PiMessage): string { return `message-${this.identity(message).key}`; }
+
+/**
+ * Reasoning shows itself while the reply is still being written, then folds away.
+ *
+ * The reader watching a turn wants to see what it is doing; once the answer has
+ * landed, that reasoning is the work behind it, not the thing to read. So the
+ * default follows the stream — live means open, settled means closed — and an
+ * explicit toggle outranks both, surviving settling and every later render.
+ */
+// A bound property, not a method: the DOM layer reads it off the controller and
+// hands it to the renderer, and a prototype method would lose `this` on the way
+// and blank the whole transcript on the first reply that carries reasoning.
+readonly isThinkingExpanded = (thinkingKey: string): boolean =>
+ this.thinkingChoices.get(thinkingKey) ?? this.belongsToLiveReply(thinkingKey);
+
+/** Whether a reasoning key belongs to the reply that is streaming right now. */
+private belongsToLiveReply(thinkingKey: string): boolean {
+ const live = this.options.state.streamingMessage;
+ return Boolean(live && thinkingKey.startsWith(`${this.messageKey(live)}-thinking-`));
+}
+
  private identity(message: PiMessage): MessageIdentity {
   const existing = this.identities.get(message);
   if (existing) return existing;
@@ -124,7 +157,7 @@ export class TranscriptController {
    if (message.role === "toolResult" && message.toolCallId) this.toolResults.set(message.toolCallId, message);
   }
   if (sessionChanged) {
-   this.expandedThinkingKeys.clear();
+   this.thinkingChoices.clear();
    this.pendingToggle = undefined;
    this.options.clearMediaRefusals();
    this.view.clear();
@@ -148,6 +181,8 @@ export class TranscriptController {
  /** Settle in pi's order: follow-ups arriving during playback belong after this reply. */
  settle(message: PiMessage): void {
   const { state } = this.options;
+  // Identity is inherited before the key is read: a settled reply arrives as a
+  // new object, and allocating a fresh key here would collapse the wrong node.
   this.inherit(state.streamingMessage, message);
   if (!hasEquivalentTail(state.messages, message)) insertReply(state.messages, message, state.streamingIndex);
   state.streamingMessage = undefined;
@@ -203,9 +238,27 @@ export class TranscriptController {
    }
    entries.push({ key, signature: `${messageRenderSignature(message, this.toolResults, this.liveTools, message === streaming, this.signature)}|ts${epoch ?? "-"}|tk${this.thinkingSignature(message, key)}` });
   }
-  this.context = { byKey, omitted, resultMap: this.toolResults, separatorLabels };
+  this.context = { byKey, omitted, resultMap: this.toolResults, separatorLabels, promptOrdinals: this.promptOrdinals() };
   try { this.view.update(entries); } finally { this.context = undefined; }
   if (visible.length < capped.length) this.options.scheduleRender();
+ }
+
+ /**
+  * Maps every known message to the prompt that opens its turn.
+  *
+  * Walks the whole snapshot, not the rendered window: the window is a suffix, so
+  * its first assistant reply may already have lost the prompt it answers, and
+  * guessing there would address the wrong turn.
+  */
+ private promptOrdinals(): ReadonlyMap<string, number> {
+  const ordinals = new Map<string, number>();
+  let next = this.options.state.omittedPromptCount;
+  let owning: number | undefined;
+  for (const message of this.options.state.messages) {
+   if (message.role === "user") owning = next++;
+   if (owning !== undefined) ordinals.set(this.messageKey(message), owning);
+  }
+  return ordinals;
  }
 
  private thinkingSignature(message: PiMessage, key: string): string {
@@ -213,13 +266,13 @@ export class TranscriptController {
   let index = 0;
   for (const block of messageBlocks(message)) {
    if (block.type !== "thinking") continue;
-   signature += this.expandedThinkingKeys.has(`${key}-thinking-${index}`) ? "1" : "0";
+   signature += this.isThinkingExpanded(`${key}-thinking-${index}`) ? "1" : "0";
    index += 1;
   }
   return signature || "-";
  }
  private pruneThinking(messages: readonly PiMessage[]): void {
-  if (this.expandedThinkingKeys.size === 0) return;
+  if (this.thinkingChoices.size === 0) return;
   const retained = new Set<string>();
   for (const message of messages) {
    const key = this.messageKey(message);
@@ -230,15 +283,15 @@ export class TranscriptController {
     index += 1;
    }
   }
-  for (const key of this.expandedThinkingKeys) if (!retained.has(key)) this.expandedThinkingKeys.delete(key);
+  for (const key of this.thinkingChoices.keys())
+   if (!retained.has(key)) this.thinkingChoices.delete(key);
  }
 
  setThinkingVisibility(element: HTMLElement, expanded: boolean): void {
   const key = element.dataset.thinkingKey;
   if (!key) return;
   this.pendingToggle = { thinkingKey: key, viewportTop: element.getBoundingClientRect().top };
-  if (expanded) this.expandedThinkingKeys.add(key);
-  else this.expandedThinkingKeys.delete(key);
+ this.thinkingChoices.set(key, expanded);
   this.options.scheduleRender();
  }
  restoreThinkingAnchor(adjustBy: (offset: number) => void): void {

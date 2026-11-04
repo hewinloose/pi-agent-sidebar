@@ -224,6 +224,15 @@ export type HostToWebviewMessage =
 			 */
 			omittedMessageCount?: number;
 			/**
+			 * How many user prompts the host left out of `messages`.
+			 *
+			 * History actions address prompts from the start of the session. The
+			 * webview can only count the ones inside its window, so the host
+			 * supplies the missing offset; without it a windowed session would
+			 * name the wrong prompt.
+			 */
+			omittedPromptCount?: number;
+			/**
 			 * Text of the session's first user message, when `messages` no longer carries
 			 * it.
 			 *
@@ -332,6 +341,28 @@ export type WebviewToHostMessage =
 	| { type: "forkSession"; actionId: string; entryId: string }
 	| { type: "switchSession"; actionId: string; path: string }
 	| { type: "deleteSession"; actionId: string; path: string }
+/**
+ * Prompt-scoped history actions.
+ *
+ * `promptOrdinal` counts user messages from the start of the session and is the
+ * only cursor the webview can produce: rendered messages carry pi's content but
+ * no stable entry id. `text` is the prompt exactly as pi stored it — the rendered
+ * row strips the `<pi-context>` block, so the reader-facing copy is a different
+ * string — and the host re-checks it against `get_fork_messages` before acting:
+ * the transcript is a window onto the session and a stale ordinal must fail
+ * closed, never delete the wrong turn. An image-only prompt stores no text, so
+ * `text` may be empty and the ordinal alone identifies it.
+ */
+| { type: "deletePrompt"; actionId: string; promptOrdinal: number; text: string }
+/**
+ * Re-runs the prompt with `newText`. Everything from that prompt onwards is
+ * rebuilt, because the replies that followed answered the old text.
+ */
+| { type: "editPrompt"; actionId: string; promptOrdinal: number; text: string; newText: string }
+/** Re-runs the prompt unchanged, discarding the reply it produced. */
+| { type: "regeneratePrompt"; actionId: string; promptOrdinal: number; text: string }
+/** Forks at the turn this prompt opens; the reply below it is the anchor the reader clicked. */
+| { type: "forkPrompt"; actionId: string; promptOrdinal: number; text: string }
 	| { type: "renameSession"; actionId: string; name: string }
 	| { type: "setModel"; actionId: string; provider: string; modelId: string }
 	| { type: "setThinking"; actionId: string; level: string }
@@ -386,6 +417,10 @@ export const WEBVIEW_REQUEST_TYPES = [
 	"forkSession",
 	"switchSession",
 	"deleteSession",
+	"deletePrompt",
+	"editPrompt",
+	"regeneratePrompt",
+	"forkPrompt",
 	"renameSession",
 	"setModel",
 	"setThinking",
@@ -433,6 +468,8 @@ function assertEveryRequestTypeIsListed(missing: UnlistedRequestType): void {
 
 assertEveryRequestTypeIsListed(undefined as UnlistedRequestType);
 
+/** Ceiling for one prompt's text, shared so the edit box cannot offer more than the parser accepts. */
+export const MAX_MESSAGE_LENGTH = 1_000_000;
 export const MAX_PATH_LENGTH = 32 * 1024;
 export const MAX_WORKSPACE_ENTRY_SUGGESTIONS = 200;
 export const MAX_IMAGE_ATTACHMENT_COUNT = 4;

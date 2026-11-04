@@ -1,0 +1,11 @@
+﻿{"file":".trellis/spec/architecture/layer-boundaries.md","reason":"Which layer may import which; new session service must stay vscode-free"}
+{"file":".trellis/spec/architecture/protocol-and-validation.md","reason":"Adding protocol variants requires the coordinated edit across union/parser/lists/dispatch"}
+{"file":".trellis/spec/host/provider-and-lifecycle.md","reason":"Session mutations, generation guards, error channels, logging"}
+{"file":".trellis/spec/host/rpc-transport.md","reason":"How switch_session and other pi commands are issued and validated"}
+{"file":".trellis/spec/host/webview-boundary.md","reason":"Single inbound listener, single post(), actionResult contract"}
+{"file":".trellis/spec/webview/state-and-rendering.md","reason":"UiState ownership, render pipeline, signature idempotence"}
+{"file":".trellis/spec/webview/dom-and-styles.md","reason":"DOM tiers, sanitizer policy, delegated listeners, CSS tokens"}
+{"file":".trellis/spec/webview/streaming-and-scroll.md","reason":"Keyed transcript nodes and scroll invariants that these edits must not break"}
+{"file":".trellis/spec/quality/testing.md","reason":"Load-bundled-module test pattern for new host and webview modules"}
+{"file":".trellis/spec/quality/code-style.md","reason":"Type rules and naming conventions"}
+{"file":".trellis/spec/quality/build-and-release.md","reason":"verify gate and reproducible build expectations"}

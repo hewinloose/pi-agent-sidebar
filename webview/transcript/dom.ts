@@ -23,8 +23,8 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
  const streamingSectionSource = new WeakMap<HTMLElement, string>();
 
  function patchStreamingMessage(slot: Element, message: PiMessage, resultMap: ReadonlyMap<string, PiMessage>, messageKey: string): Element | undefined {
-  const { liveTools, expandedThinkingKeys } = options.controller();
-  const sections = assistantMessageSections(message, resultMap, liveTools, true, messageKey, true, expandedThinkingKeys);
+  const controller = options.controller();
+  const sections = assistantMessageSections(message, resultMap, controller.liveTools, true, messageKey, true, (key) => controller.isThinkingExpanded(key));
   const host = slot.querySelector(":scope > .message");
   if (!host || !host.classList.contains("assistant-message")) return undefined;
   const snapshot = captureExpandableState(slot);
@@ -148,17 +148,34 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
    if (patched) { applyMessageBoundaryClasses(patched, message); return patched; }
   }
   const isStreaming = message === ui.streamingMessage;
-  const { liveTools, expandedThinkingKeys } = options.controller();
-  const html = messageHtml(message, context.resultMap, liveTools, isStreaming, entry.key, expandedThinkingKeys);
+  const controller = options.controller();
+  const html = messageHtml(message, context.resultMap, controller.liveTools, isStreaming, entry.key, (key) => controller.isThinkingExpanded(key), context.promptOrdinals.get(entry.key));
   const node = document.createElement("div");
   node.className = "message-slot";
   applyMessageBoundaryClasses(node, message);
   node.replaceChildren(...sanitizedNodes(html));
-  if (previous) applyExpandableState(node, captureExpandableState(previous));
+  // The glyph is appended rather than rendered: the sanitizer keeps the HTML
+  // profile, so an inline <svg> in the markup would never survive it.
+  enhanceMessageActions(node);
+  const snapshot = previous ? captureExpandableState(previous) : undefined;
+  applyProcessState(node, snapshot?.processChoice, isStreaming);
+  if (snapshot) applyExpandableState(node, snapshot);
   if (!isStreaming) enhanceRenderedNodes(node);
   return node;
  }
 
+ /**
+  * Applies the process group's state.
+  *
+  * The reader's own decision is the only thing remembered; without one the group
+  * follows the stream — open while the reply is still being written, closed once
+  * the answer has landed.
+  */
+ function applyProcessState(node: Element, choice: "open" | "closed" | undefined, isStreaming: boolean): void {
+  const open = choice === "open" || (choice === undefined && isStreaming);
+  node.classList.toggle("process-open", open);
+  node.querySelector<HTMLElement>("[data-expandable=\"process\"]")?.setAttribute("aria-expanded", open ? "true" : "false");
+ }
  function applyExpandableState(node: Element, snapshot: ExpandableSnapshot): void {
   if (snapshot.tools.size === 0 && snapshot.skills.size === 0) return;
   for (const tool of node.querySelectorAll<HTMLElement>(".tool-call.expandable[data-tool-key]")) {
@@ -173,6 +190,18 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
  function toggleExpandable(element: HTMLElement): void {
   if (window.getSelection()?.toString()) return;
   options.anchor.detach();
+  // The process handle opens the whole run of reasoning and tool calls, so its
+  // state lives on the slot rather than on the button.
+  if (element.dataset.expandable === "process") {
+   const slot = element.closest(".message-slot");
+   const open = !slot?.classList.contains("process-open");
+   slot?.classList.toggle("process-open", open);
+   // Remembered, so settling cannot undo a decision the reader made mid-stream.
+   slot?.setAttribute("data-process-choice", open ? "open" : "closed");
+   element.setAttribute("aria-expanded", open ? "true" : "false");
+   options.scheduleMeasure();
+   return;
+  }
   const isThinking = element.dataset.expandable === "thinking";
   const isExpanding = !element.classList.contains(isThinking ? "is-expanded" : "expanded");
   if (isThinking) options.controller().setThinkingVisibility(element, isExpanding);
@@ -202,6 +231,7 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
   section.append(...sanitizedNodes(html));
  }
  function enhanceRenderedNodes(root: Element): void {
+  enhanceMessageActions(root);
   enhanceCodeBlocks(root);
   enhanceMermaidBlocks(root);
   linkifyWorkspacePaths(root);
@@ -225,11 +255,100 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
    wrapper.append(button);
   }
  }
+/**
+ * The row-action glyphs, taken from PI-Desktop's lucide set (`components/icons.tsx`:
+ * `PencilLine`, `Trash2`, `RefreshCw`, `GitFork`) and drawn at the same 13px with
+ * the same 1.75 stroke so the two sidebars read alike.
+ *
+ * They are built here instead of being emitted as HTML: the transcript sanitizer
+ * keeps DOMPurify's HTML profile, which drops SVG on sight.
+ */
+interface IconShape {
+ tag: "path" | "circle";
+ attrs: Record<string, string>;
+}
+const MESSAGE_ACTION_GLYPHS: Record<string, readonly IconShape[]> = {
+ edit: [
+  { tag: "path", attrs: { d: "M12 20h9" } },
+  { tag: "path", attrs: { d: "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" } },
+  { tag: "path", attrs: { d: "m15 5 3 3" } },
+ ],
+ delete: [
+  { tag: "path", attrs: { d: "M3 6h18" } },
+  { tag: "path", attrs: { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" } },
+  { tag: "path", attrs: { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" } },
+  { tag: "path", attrs: { d: "M10 11v6" } },
+  { tag: "path", attrs: { d: "M14 11v6" } },
+ ],
+ regenerate: [
+  { tag: "path", attrs: { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" } },
+  { tag: "path", attrs: { d: "M21 3v5h-5" } },
+  { tag: "path", attrs: { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" } },
+  { tag: "path", attrs: { d: "M8 16H3v5" } },
+ ],
+ sparkles: [
+  { tag: "path", attrs: { d: "M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" } },
+  { tag: "path", attrs: { d: "M20 3v4" } },
+  { tag: "path", attrs: { d: "M22 5h-4" } },
+  { tag: "path", attrs: { d: "M4 17v2" } },
+  { tag: "path", attrs: { d: "M5 18H3" } },
+ ],
+ chevron: [{ tag: "path", attrs: { d: "m9 18 6-6-6-6" } }],
+ fork: [
+  { tag: "circle", attrs: { cx: "12", cy: "18", r: "3" } },
+  { tag: "circle", attrs: { cx: "6", cy: "6", r: "3" } },
+  { tag: "circle", attrs: { cx: "18", cy: "6", r: "3" } },
+  { tag: "path", attrs: { d: "M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9" } },
+  { tag: "path", attrs: { d: "M12 12v3" } },
+ ],
+};
+function enhanceMessageActions(root: ParentNode): void {
+ for (const button of root.querySelectorAll<HTMLElement>("[data-message-action]")) {
+  if (button.querySelector("svg")) continue;
+  const glyph = MESSAGE_ACTION_GLYPHS[button.dataset.messageAction ?? ""];
+  if (glyph) button.append(createMessageActionIcon(glyph, 13));
+ }
+ // Same treatment for the process handle's own glyphs: the sanitizer keeps the
+ // HTML profile, so they are appended to their empty hosts here.
+ for (const host of root.querySelectorAll<HTMLElement>("[data-glyph]")) {
+  if (host.querySelector("svg")) continue;
+  const glyph = MESSAGE_ACTION_GLYPHS[host.dataset.glyph ?? ""];
+  if (glyph) host.append(createMessageActionIcon(glyph, host.dataset.glyph === "sparkles" ? 14 : 12));
+ }
+}
+function createMessageActionIcon(glyph: readonly IconShape[], size: number): SVGSVGElement {
+ const namespace = "http://www.w3.org/2000/svg";
+ const svg = document.createElementNS(namespace, "svg");
+ const frame: Record<string, string> = {
+  viewBox: "0 0 24 24",
+  width: String(size),
+  height: String(size),
+  fill: "none",
+  stroke: "currentColor",
+  "stroke-width": "1.75",
+  "stroke-linecap": "round",
+  "stroke-linejoin": "round",
+  "aria-hidden": "true",
+  focusable: "false",
+ };
+ for (const [name, value] of Object.entries(frame)) svg.setAttribute(name, value);
+ for (const shape of glyph) {
+  const node = document.createElementNS(namespace, shape.tag);
+  for (const [name, value] of Object.entries(shape.attrs)) node.setAttribute(name, value);
+  svg.append(node);
+ }
+ return svg;
+}
  return { createMessageNode, patchStreamingMessage, toggleExpandable, refreshExpandedToolBody };
 }
 
 interface StreamUpdate { selector?: string; text: string; format: "markdown" | "plain"; }
-interface ExpandableSnapshot { tools: Set<string>; skills: Set<string>; }
+interface ExpandableSnapshot {
+ tools: Set<string>;
+ skills: Set<string>;
+ /** Only the reader's own decision; an unset choice follows the stream. */
+ processChoice: "open" | "closed" | undefined;
+}
 function captureExpandableState(previous: Element): ExpandableSnapshot {
  const tools = new Set<string>();
  for (const tool of previous.querySelectorAll<HTMLElement>(".tool-call.expandable.expanded[data-tool-key]")) {
@@ -239,7 +358,12 @@ function captureExpandableState(previous: Element): ExpandableSnapshot {
  for (const skill of previous.querySelectorAll<HTMLElement>(".skill-block[data-skill-key]")) {
   if (skill.dataset.skillKey && skill.classList.contains("expanded")) skills.add(skill.dataset.skillKey);
  }
- return { tools, skills };
+ const choice = previous.getAttribute("data-process-choice");
+ return {
+  tools,
+  skills,
+  processChoice: choice === "open" || choice === "closed" ? choice : undefined,
+ };
 }
 function setExpandedState(element: HTMLElement, expanded: boolean): void {
  const thinking = element.dataset.expandable === "thinking";

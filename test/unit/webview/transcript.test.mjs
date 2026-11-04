@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 import { loadBundledModule } from "../../helpers/load-bundled-module.mjs";
 
@@ -120,24 +120,24 @@ test("assistant transcript preserves activity ordering and stream state", async 
 			new Map(),
 			true,
 			"message-7",
+			// Opened explicitly: this assertion is about the body reaching the page.
+			() => true,
 		);
 
 		assert.match(html, /class="message assistant-message"/u);
-		// Reasoning starts collapsed and has a collapse control even while it
-		// streams; the reader opts in to seeing it, so the body stays out of the
-		// DOM until then (a settle would otherwise parse a long reasoning wall
-		// the reader never asked to see).
+		// An opened block keeps its body in the DOM, so a reasoning wall is parsed
+		// once and the reader can follow it while it streams.
 		assert.match(
 			html,
-			/thinking-block streaming" data-thinking-key="message-7-thinking-0" data-expandable="thinking"/u,
+			/thinking-block streaming is-expanded" data-thinking-key="message-7-thinking-0" data-expandable="thinking"/u,
 		);
-		assert.doesNotMatch(html, /is-expanded|checking/u);
+		assert.match(html, /checking/u);
 		assert.match(html, /partial failure/u);
 		assert.match(html, /Cancelled/u);
 
-		// An explicitly expanded streaming block renders its (sanitized) body and
-		// streams updates into it instead.
-		const expanded = loaded.module.messageHtml(
+		// A block the reader closed keeps its body out of the DOM, so collapsing
+		// a long reasoning wall never pays the parse.
+		const collapsed = loaded.module.messageHtml(
 			{
 				role: "assistant",
 				content: [
@@ -151,14 +151,13 @@ test("assistant transcript preserves activity ordering and stream state", async 
 			new Map(),
 			true,
 			"message-7",
-			new Set(["message-7-thinking-0"]),
+			() => false,
 		);
 		assert.match(
-			expanded,
-			/thinking-block streaming is-expanded" data-thinking-key="message-7-thinking-0"/u,
+			collapsed,
+			/thinking-block streaming" data-thinking-key="message-7-thinking-0" data-expandable="thinking"/u,
 		);
-		assert.match(expanded, /aria-expanded="true"/u);
-		assert.ok(expanded.indexOf("checking") < expanded.indexOf("answer"));
+		assert.doesNotMatch(collapsed, /is-expanded|checking/u);
 	} finally {
 		await loaded.dispose();
 	}
@@ -182,11 +181,12 @@ test("adjacent reasoning parts render as one section", async () => {
 			new Map(),
 			false,
 			"message-9",
+			() => false,
 		);
 		assert.equal(
 			collapsed.match(/data-expandable="thinking"/gu).length,
 			1,
-			"three parts must not stack three collapsed rows",
+			"two parts must not stack two collapsed rows",
 		);
 		assert.match(collapsed, /data-thinking-key="message-9-thinking-0"/u);
 		assert.doesNotMatch(collapsed, /first part|second part/u);
@@ -198,7 +198,7 @@ test("adjacent reasoning parts render as one section", async () => {
 			new Map(),
 			false,
 			"message-9",
-			new Set(["message-9-thinking-0"]),
+			() => true,
 		);
 		assert.match(expanded, /aria-expanded="true"/u);
 		assert.ok(expanded.indexOf("first part") < expanded.indexOf("second part"));
@@ -385,7 +385,9 @@ test("a call with nothing to reveal still collapses onto one line", async () => 
 			"message-1",
 		);
 
-		assert.doesNotMatch(html, /expandable/u);
+		// The box itself carries no `expandable`: the only button in the markup is
+		// the process handle that opens the run it belongs to.
+		assert.doesNotMatch(html, /class="activity-item tool-call running expandable"/u);
 		// The header carries no status glyph: the call's state lives on the box's
 		// border, so a running box with no body is indistinguishable from a settled
 		// one in the header itself (transcript.css breathes the border only while
@@ -710,6 +712,173 @@ test("a message image escapes its payload, not only its mime type", async () => 
 			assert.ok(tag, `no image element in ${html}`);
 			assert.ok(tag.endsWith('alt="Attached image">'), tag);
 		}
+	} finally {
+		await loaded.dispose();
+	}
+});
+
+test("a row carries its history actions only when its prompt is addressable", async () => {
+	const loaded = await loadTranscript();
+	try {
+		const user = { role: "user", content: [{ type: "text", text: "hello" }] };
+		const withOrdinal = loaded.module.messageHtml(user, new Map(), new Map(), false, "message-0", undefined, 3);
+		assert.match(withOrdinal, /data-message-action="edit"/u);
+		assert.match(withOrdinal, /data-message-action="delete"/u);
+		assert.match(withOrdinal, /data-prompt-ordinal="3"/u);
+		assert.match(withOrdinal, /class="message-action danger"/u);
+		// Under the bubble, not in it: PI-Desktop keeps the row outside the message
+		// so a framed turn stays a turn, and lines it up with the reader's side.
+		assert.ok(withOrdinal.indexOf("</article>") < withOrdinal.indexOf('class="message-actions'));
+		assert.match(withOrdinal, /class="message-actions user-actions"/u);
+		// The label is a tooltip, never the surface: PI-Desktop's zh-CN copy, and a
+		// button body the DOM layer fills with the glyph after sanitizing.
+		assert.match(withOrdinal, /title="编辑并重新发送"/u);
+		assert.match(withOrdinal, /aria-label="编辑并重新发送"><\/button>/u);
+		assert.match(withOrdinal, /aria-label="删除消息"><\/button>/u);
+		assert.match(withOrdinal, /class="message-action danger"/u);
+
+		// No ordinal means this row's prompt fell outside the window. Rendering the
+		// buttons anyway would put a dead click on the row.
+		const withoutOrdinal = loaded.module.messageHtml(user, new Map(), new Map(), false, "message-0");
+		assert.equal(withoutOrdinal.includes("data-message-action"), false);
+
+		const reply = { role: "assistant", content: [{ type: "text", text: "answer" }] };
+		const replyHtml = loaded.module.messageHtml(reply, new Map(), new Map(), false, "message-1", undefined, 3);
+		assert.match(replyHtml, /data-message-action="regenerate"/u);
+		assert.match(replyHtml, /data-message-action="fork"/u);
+		// Replies keep the row on their own left edge, and never on the reader's.
+		assert.ok(replyHtml.indexOf("</article>") < replyHtml.indexOf('class="message-actions'));
+		assert.equal(replyHtml.includes("user-actions"), false);
+		assert.match(replyHtml, /title="重新生成"/u);
+		assert.match(replyHtml, /title="从此回复创建分支"/u);
+		// Neither reply action is destructive, so neither wears the danger class.
+		assert.equal(replyHtml.includes("message-action danger"), false);
+	} finally {
+		await loaded.dispose();
+	}
+});
+
+test("reasoning is hidden by default, command text included", async () => {
+	const loaded = await loadTranscript();
+	try {
+		const command = "cd d:/code/pi-agent-sidebar && cat .trellis/.current-task";
+		const message = {
+			role: "assistant",
+			content: [
+				{ type: "thinking", thinking: "Check the task:\n\n```bash\n" + command + "\n```" },
+				{ type: "text", text: "answer" },
+			],
+		};
+		// No resolver is the real path: the controller answers "collapsed" unless the
+		// reader opened this block, so nothing of the reasoning reaches the DOM — not
+		// the prose, not the shell command it quoted.
+		const hidden = loaded.module.messageHtml(message, new Map(), new Map(), false, "message-9");
+		assert.equal(hidden.includes("current-task"), false);
+		assert.equal(hidden.includes("Check the task"), false);
+		assert.match(hidden, /aria-expanded="false"/u);
+		assert.match(hidden, /thinking-collapsed/u);
+
+		const opened = loaded.module.messageHtml(message, new Map(), new Map(), false, "message-9", () => true);
+		assert.equal(opened.includes("current-task"), true);
+	} finally {
+		await loaded.dispose();
+	}
+});
+
+test("a step that only ran a tool carries no reply actions", async () => {
+	const loaded = await loadTranscript();
+	try {
+		const step = {
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "cd /repo && env | sort" } },
+			],
+		};
+		// Regenerate and fork belong to an answer, never to the step that produced it:
+		// hanging them under a shell command reads as if the command were the reply.
+		const stepHtml = loaded.module.messageHtml(step, new Map(), new Map(), false, "message-4", undefined, 2);
+		assert.equal(stepHtml.includes("data-message-action"), false);
+
+		const answered = loaded.module.messageHtml(
+			{
+				role: "assistant",
+				content: [
+					{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "ls" } },
+					{ type: "text", text: "done" },
+				],
+			},
+			new Map(),
+			new Map(),
+			false,
+			"message-5",
+			undefined,
+			2,
+		);
+		assert.match(answered, /data-message-action="regenerate"/u);
+	} finally {
+		await loaded.dispose();
+	}
+});
+
+test("a closed bash box names the step instead of quoting the command", async () => {
+	const loaded = await loadTranscript();
+	try {
+		const html = loaded.module.messageHtml(
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "toolCall",
+						id: "call-9",
+						name: "bash",
+						arguments: { command: "env | grep -i '^PI_' | sort" },
+					},
+				],
+			},
+			new Map([["call-9", { role: "toolResult", toolCallId: "call-9", content: [{ type: "text", text: "PI_MODEL=…" }] }]]),
+			new Map(),
+			false,
+			"message-8",
+		);
+		// The command stays in the DOM (the open state prints it, and `title` answers
+		// a hover), but the closed row shows the label: a transcript that repeats
+		// every pipeline the agent ran is unreadable.
+		assert.match(html, /<span class="tool-command-name">运行命令<\/span>/u);
+		assert.match(html, /data-tool-body="lazy"/u);
+	} finally {
+		await loaded.dispose();
+	}
+});
+
+test("a message folds its whole activity into one process handle", async () => {
+	const loaded = await loadTranscript();
+	try {
+		const html = loaded.module.messageHtml(
+			{
+				role: "assistant",
+				content: [
+					{ type: "thinking", thinking: "inspect" },
+					{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "env | sort" } },
+					{ type: "text", text: "done" },
+					{ type: "toolCall", id: "call-2", name: "read", arguments: { path: "src/a.ts" } },
+				],
+			},
+			new Map(),
+			new Map(),
+			false,
+			"message-6",
+		);
+		// One handle for the message, not one per run: prose sitting between two tool
+		// calls must not split the process in two.
+		assert.equal((html.match(/<button type="button" class="activity-process"/gu) ?? []).length, 1);
+		assert.equal((html.match(/data-process-head="true"/gu) ?? []).length, 1);
+		// Labelled the way PI-Desktop labels its process group.
+		assert.match(html, /<span class="activity-process-label">2 次工具操作<\/span>/u);
+		assert.match(html, /<span class="activity-process-note">含思考<\/span>/u);
+		assert.match(html, /data-glyph="sparkles"/u);
+		assert.match(html, /data-glyph="chevron"/u);
+		// Closed by default, so the slot itself carries no open state.
+		assert.equal(html.includes("process-open"), false);
 	} finally {
 		await loaded.dispose();
 	}

@@ -3,6 +3,7 @@ import {
 	MAX_ATTACHMENT_COUNT,
 	MAX_COMPOSER_REFERENCE_COUNT,
 	MAX_IMAGE_ATTACHMENT_COUNT,
+	MAX_MESSAGE_LENGTH,
 	MAX_PATH_LENGTH,
 	MAX_RESOLVE_MEDIA_SOURCES,
 } from "./protocol.js";
@@ -10,7 +11,6 @@ import {
 const MAX_ACTION_ID_LENGTH = 128;
 const MAX_ENTRY_ID_LENGTH = 512;
 const MAX_SESSION_NAME_LENGTH = 200;
-const MAX_MESSAGE_LENGTH = 1_000_000;
 const MAX_MENTION_QUERY_LENGTH = 512;
 const MAX_PASTED_IMAGE_DATA_LENGTH = 16 * 1024 * 1024 + 16;
 
@@ -77,6 +77,22 @@ export function parseWebviewMessage(
 		const actionId = boundedString(message.actionId, MAX_ACTION_ID_LENGTH);
 		const name = boundedString(message.name, MAX_SESSION_NAME_LENGTH);
 		return actionId && name ? { type, actionId, name } : undefined;
+	}
+	if (
+		type === "deletePrompt" ||
+		type === "editPrompt" ||
+		type === "regeneratePrompt" ||
+		type === "forkPrompt"
+	) {
+		const actionId = boundedString(message.actionId, MAX_ACTION_ID_LENGTH);
+		const promptOrdinal = nonNegativeInteger(message.promptOrdinal);
+		// An image-only prompt stores no text, and it is still addressable by ordinal,
+		// so empty is a value here rather than a missing one.
+		const text = boundedString(message.text, MAX_MESSAGE_LENGTH, true);
+		if (!actionId || promptOrdinal === undefined || text === undefined) return;
+		if (type !== "editPrompt") return { type, actionId, promptOrdinal, text };
+		const newText = boundedString(message.newText, MAX_MESSAGE_LENGTH);
+		return newText === undefined ? undefined : { type, actionId, promptOrdinal, text, newText };
 	}
 	if (type === "pasteImages") {
 		const actionId = boundedString(message.actionId, MAX_ACTION_ID_LENGTH);

@@ -16,6 +16,10 @@ export interface WebviewMessageRouterOptions {
 	onForkSession(entryId: string): Promise<void>;
 	onSwitchSession(path: string): Promise<void>;
 	onDeleteSession(path: string): Promise<void>;
+	onDeletePrompt(promptOrdinal: number, text: string): Promise<void>;
+	onEditPrompt(promptOrdinal: number, text: string, newText: string): Promise<void>;
+	onRegeneratePrompt(promptOrdinal: number, text: string): Promise<void>;
+	onForkPrompt(promptOrdinal: number, text: string): Promise<void>;
 	onRenameSession(name: string): Promise<void>;
 	onSetModel(provider: string, modelId: string): Promise<void>;
 	onSetThinking(level: string): Promise<void>;
@@ -126,6 +130,20 @@ export class WebviewMessageRouter {
 				return;
 			case "openWorkspacePath":
 				await this.options.onOpenWorkspacePath(message.path, message.line);
+				return;
+			case "deletePrompt":
+				await this.runAction(message, () => this.options.onDeletePrompt(message.promptOrdinal, message.text));
+				return;
+			case "editPrompt":
+				await this.runAction(message, () =>
+					this.options.onEditPrompt(message.promptOrdinal, message.text, message.newText),
+				);
+				return;
+			case "regeneratePrompt":
+				await this.runAction(message, () => this.options.onRegeneratePrompt(message.promptOrdinal, message.text));
+				return;
+			case "forkPrompt":
+				await this.runAction(message, () => this.options.onForkPrompt(message.promptOrdinal, message.text));
 				return;
 			case "showLogs":
 				this.options.onShowLogs();

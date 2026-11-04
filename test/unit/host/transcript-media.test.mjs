@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { loadBundledModule } from "../../helpers/load-bundled-module.mjs";
 
@@ -54,24 +55,49 @@ async function loadTranscriptMedia() {
 }
 
 /**
+ * A fixture path in the form the service will compare against.
+ *
+ * Fixtures are written POSIX-style because that is what a transcript on Linux or
+ * macOS names. The service resolves every path through `node:path`, so on Windows
+ * `/workspace/shot.png` is not absolute — it comes back drive-qualified. Mapping
+ * the expectation through the same call keeps one fixture meaning one file
+ * everywhere, instead of asserting a literal that can only pass on POSIX.
+ */
+const fixturePath = (posixPath) => path.resolve(posixPath);
+
+/**
  * A made-up file system. `files` is keyed by the path a transcript would name:
  * `real` is where a symlink points, and a path absent from the map does not
  * exist at all.
+ *
+ * Keys, symlink targets, roots and the working directory all go through the same
+ * resolution the service uses, so a fixture names the file the service will look
+ * for on every platform.
  */
 function harness(
 	module,
 	{ roots = ["/workspace"], cwd = "/workspace", files = {} } = {},
 ) {
-	globalThis.__transcriptMediaVscodeMock = { files };
-	const canonical = (value) => files[value]?.real ?? value;
+	const normalized = {};
+	for (const [key, entry] of Object.entries(files)) {
+		normalized[path.resolve(key)] = entry.real
+			? { ...entry, real: path.resolve(entry.real) }
+			: entry;
+	}
+	globalThis.__transcriptMediaVscodeMock = { files: normalized };
+	const canonical = (value) => {
+		const key = path.resolve(value);
+		return normalized[key]?.real ?? key;
+	};
 	return new module.TranscriptMedia(
-		() => roots,
-		() => cwd,
+		() => roots.map((root) => path.resolve(root)),
+		() => path.resolve(cwd),
 		{
 			realpathSync: canonical,
 			realpath: async (value) => {
-				if (!files[value]) throw new Error("ENOENT");
-				return canonical(value);
+				const key = path.resolve(value);
+				if (!normalized[key]) throw new Error("ENOENT");
+				return normalized[key].real ?? key;
 			},
 		},
 	);
@@ -90,7 +116,7 @@ test("a workspace image resolves to its canonical file path", async () => {
 
 		const uri = await media.resolve("/workspace/docs/shot.png");
 
-		assert.equal(uri?.fsPath, "/workspace/docs/shot.png");
+		assert.equal(uri?.fsPath, fixturePath("/workspace/docs/shot.png"));
 	} finally {
 		await loaded.dispose();
 	}
@@ -107,7 +133,10 @@ test("a relative path resolves against pi's working directory", async () => {
 
 		const uri = await media.resolve("out/chart.png");
 
-		assert.equal(uri?.fsPath, "/workspace/packages/app/out/chart.png");
+		assert.equal(
+			uri?.fsPath,
+			fixturePath("/workspace/packages/app/out/chart.png"),
+		);
 	} finally {
 		await loaded.dispose();
 	}
@@ -122,7 +151,7 @@ test("the temp directory renders, because that is where previews land", async ()
 
 		const uri = await media.resolve("/tmp/pi-block-preview/compare.png");
 
-		assert.equal(uri?.fsPath, "/tmp/pi-block-preview/compare.png");
+		assert.equal(uri?.fsPath, fixturePath("/tmp/pi-block-preview/compare.png"));
 	} finally {
 		await loaded.dispose();
 	}
@@ -149,8 +178,7 @@ test("a path outside every allowed root is refused", async () => {
 		// A root's name is a prefix of this one; only a real separator makes a path
 		// inside it.
 		assert.equal(await media.resolve("/workspace-other/chart.png"), undefined);
-		// Refused by the extension check rather than by containment, but still never
-		// served.
+		// Never served either way: outside the roots, and not an image extension.
 		assert.equal(await media.resolve("/etc/passwd"), undefined);
 	} finally {
 		await loaded.dispose();
@@ -189,13 +217,13 @@ test("only regular images under the size ceiling are served", async () => {
 
 		assert.equal(
 			(await media.resolve("/workspace/diagram.png"))?.fsPath,
-			"/workspace/diagram.png",
+			fixturePath("/workspace/diagram.png"),
 		);
 		assert.equal(await media.resolve("/workspace/notes.md"), undefined);
 		assert.equal(await media.resolve("/workspace/scripts"), undefined);
 		assert.equal(
 			(await media.resolve("/workspace/exact.png"))?.fsPath,
-			"/workspace/exact.png",
+			fixturePath("/workspace/exact.png"),
 		);
 		assert.equal(await media.resolve("/workspace/huge.png"), undefined);
 		assert.equal(await media.resolve("/workspace/missing.png"), undefined);
@@ -235,7 +263,7 @@ test("only allow-listed image extensions are served", async () => {
 		for (const name of accepted) {
 			assert.equal(
 				(await media.resolve(`/workspace/${name}`))?.fsPath,
-				`/workspace/${name}`,
+				fixturePath(`/workspace/${name}`),
 			);
 		}
 		// The files exist, so the extension is what refuses them.
@@ -256,7 +284,7 @@ test("a name that merely starts with dots is inside the root", async () => {
 
 		assert.equal(
 			(await media.resolve("/workspace/..cache/preview.png"))?.fsPath,
-			"/workspace/..cache/preview.png",
+			fixturePath("/workspace/..cache/preview.png"),
 		);
 	} finally {
 		await loaded.dispose();
@@ -275,15 +303,15 @@ test("a file URI and an escaped path name the same image", async () => {
 
 		assert.equal(
 			(await media.resolve("file:///workspace/my%20shot.png"))?.fsPath,
-			"/workspace/my shot.png",
+			fixturePath("/workspace/my shot.png"),
 		);
 		assert.equal(
 			(await media.resolve("/workspace/my%20shot.png"))?.fsPath,
-			"/workspace/my shot.png",
+			fixturePath("/workspace/my shot.png"),
 		);
 		assert.equal(
 			(await media.resolve("/workspace/chart.png?v=2"))?.fsPath,
-			"/workspace/chart.png",
+			fixturePath("/workspace/chart.png"),
 		);
 	} finally {
 		await loaded.dispose();

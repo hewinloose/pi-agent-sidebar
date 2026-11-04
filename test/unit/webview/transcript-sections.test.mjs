@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { loadBundledModule } from "../../helpers/load-bundled-module.mjs";
@@ -261,7 +261,7 @@ test("only the active collapsed streaming thinking animates", async () => {
 	const loaded = await loadSections();
 	try {
 		const { assistantMessageSections } = loaded.module;
-		const render = (content, streaming = true, expandedKeys) =>
+		const render = (content, streaming = true, isThinkingExpanded) =>
 			assistantMessageSections(
 				{ role: "assistant", content },
 				new Map(),
@@ -269,32 +269,41 @@ test("only the active collapsed streaming thinking animates", async () => {
 				streaming,
 				"message-1",
 				false,
-				expandedKeys,
+				isThinkingExpanded,
 			);
 		const thinking = { type: "thinking", thinking: "working" };
 
-		const active = render([thinking]);
+		// Hidden by default: no body at all, and the placeholder carries the wait.
+		const hiddenByDefault = render([thinking]);
+		assert.match(hiddenByDefault[0].html, /is-active-thinking/u);
+		assert.match(hiddenByDefault[0].html, /aria-expanded="false"/u);
+		assert.doesNotMatch(hiddenByDefault[0].html, /is-expanded/u);
+
+		// Only a block the reader opened puts the reasoning in the page.
+		const opened = render([thinking], true, () => true);
+		assert.doesNotMatch(opened[0].html, /is-active-thinking/u);
+		assert.match(opened[0].html, /class="activity-item thinking-block streaming is-expanded"/u);
+
+		// Only a block the reader closed shows the placeholder while pi is still
+		// working and nothing visible follows it.
+		const collapsed = (key) => false;
+		const active = render([thinking], true, collapsed);
 		assert.match(active[0].html, /thinking-activity is-active-thinking/u);
 		assert.match(
 			active[0].html,
 			/<span class="thinking-label">Thinking<\/span><span class="thinking-dots" aria-hidden="true"><span class="thinking-dot-one">\.<\/span><span class="thinking-dot-two">\.<\/span><span class="thinking-dot-three">\.<\/span><\/span>/u,
 		);
 
-		const beforeText = render([thinking, { type: "text", text: "answer" }]);
+		const beforeText = render([thinking, { type: "text", text: "answer" }], true, collapsed);
 		assert.doesNotMatch(beforeText[0].html, /is-active-thinking/u);
-		const beforeTool = render([
-			thinking,
-			{ type: "toolCall", id: "tool-1", name: "read", arguments: {} },
-		]);
+		const beforeTool = render(
+			[thinking, { type: "toolCall", id: "tool-1", name: "read", arguments: {} }],
+			true,
+			collapsed,
+		);
 		assert.doesNotMatch(beforeTool[0].html, /is-active-thinking/u);
 
-		const expanded = render(
-			[thinking],
-			true,
-			new Set(["message-1-thinking-0"]),
-		);
-		assert.doesNotMatch(expanded[0].html, /is-active-thinking/u);
-		const settled = render([thinking], false);
+		const settled = render([thinking], false, collapsed);
 		assert.doesNotMatch(settled[0].html, /is-active-thinking/u);
 	} finally {
 		await loaded.dispose();
@@ -437,7 +446,8 @@ test("streaming text renders Markdown before the settled highlight pass", async 
 			true,
 			"message-1",
 			false,
-			new Set(["message-1-thinking-0"]),
+			// These assertions are about the body, so open the block explicitly.
+			() => true,
 		);
 		assert.match(streamed[0].html, /<p>\*\*reasoning\*\* <unsafe><\/p>/u);
 		assert.match(streamed[1].html, /<p>\*\*answer\*\* <unsafe><\/p>/u);
@@ -453,21 +463,23 @@ test("streaming text renders Markdown before the settled highlight pass", async 
 			false,
 			"message-1",
 			false,
-			new Set(["message-1-thinking-0"]),
+			() => true,
 		);
 		assert.match(settled[0].html, /<p>\*\*reasoning\*\* <unsafe><\/p>/u);
 		assert.match(settled[1].html, /<p>\*\*answer\*\* <unsafe><\/p>/u);
 		assert.equal(settled[0].streamUpdate, undefined);
 		assert.equal(settled[1].streamUpdate, undefined);
 
-		// Without the key set, both forms stay collapsed: no body, no streaming
-		// update — the collapsed settle is the hot path a reader never pays for.
+		// Explicitly collapsed: no body and no streaming update — the settled,
+		// hidden path a reader never pays for.
 		const collapsed = assistantMessageSections(
 			message,
 			results,
 			liveTools,
 			false,
 			"message-1",
+			false,
+			() => false,
 		);
 		assert.doesNotMatch(collapsed[0].html, /<p>|<\/p>/u);
 		assert.equal(collapsed[0].streamUpdate, undefined);
@@ -497,7 +509,8 @@ test("streaming thinking updates independently from an adjacent tool", async () 
 				true,
 				"message-1",
 				true,
-				new Set(["message-1-thinking-0"]),
+				// The thinking body is what streams here, so open the block.
+				() => true,
 			);
 
 		const before = render("Inspect");
@@ -639,4 +652,32 @@ test("the hash is content-derived and independent of the marker", async () => {
 	} finally {
 		await loaded.dispose();
 	}
+});
+
+test("a closed bash box hides the command line it keeps for the open state", async () => {
+	const css = await readFile("webview/styles/transcript.css", "utf8");
+	assert.match(
+		css,
+		/\.tool-call\.expandable:not\(\.expanded\) \.tool-command \.header-text\s*\{\s*display: none;\s*\}/u,
+		"the collapsed row drops the command line",
+	);
+	assert.match(
+		css,
+		/\.tool-call\.expandable:not\(\.expanded\) \.tool-command-name\s*\{\s*display: inline;\s*\}/u,
+		"the collapsed row shows the label instead",
+	);
+});
+
+test("a closed process handle hides every item of its run", async () => {
+	const css = await readFile("webview/styles/transcript.css", "utf8");
+	assert.match(
+		css,
+		/\.message-slot:not\(\.process-open\) \.activity-timeline\[data-process\]:not\(\[data-process-head\]\)\s*\{\s*display: none;\s*\}/u,
+		"a continued run hides its timeline entirely",
+	);
+	assert.match(
+		css,
+		/\.message-slot:not\(\.process-open\) \.activity-timeline\[data-process-head\] > \.activity-item\s*\{\s*display: none;\s*\}/u,
+		"the head keeps the handle and hides the item under it",
+	);
 });

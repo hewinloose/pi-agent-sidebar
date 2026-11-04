@@ -4,7 +4,7 @@ import { loadBundledModule } from "./load-bundled-module.mjs";
 export async function transcriptHarness(t) {
  const loaded = await loadBundledModule({ entry: "webview/transcript/controller.ts", platform: "browser" });
  t.after(loaded.dispose);
- const state = { messages: [], streamingIndex: 0, omittedMessageCount: 0, timeContext: { locale: "en" } };
+ const state = { messages: [], streamingIndex: 0, omittedMessageCount: 0, omittedPromptCount: 0, timeContext: { locale: "en" } };
  const children = [];
  const builds = [];
  const effects = [];
@@ -20,7 +20,12 @@ export async function transcriptHarness(t) {
  const controller = new loaded.module.TranscriptController({
   state, container,
   createNode(entry, previous, context) {
-   const node = { ...entry, message: context.byKey.get(entry.key), omitted: context.omitted };
+   const node = {
+    ...entry,
+    message: context.byKey.get(entry.key),
+    omitted: context.omitted,
+    promptOrdinal: context.promptOrdinals.get(entry.key),
+   };
    builds.push(node);
    return node;
   },

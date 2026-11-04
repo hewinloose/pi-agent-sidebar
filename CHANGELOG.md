@@ -1,4 +1,52 @@
-# Changelog
+﻿# Changelog
+
+## Unreleased
+
+- A message's reasoning and tool calls fold into one line at its top. The line is
+  open while the reply streams and closes when it settles; opening it by hand is
+  remembered. It follows PI-Desktop's process header — a sparkles glyph, the run's
+  own shape (N 个命令 / N 次工具操作 / N 个思考步骤, plus 含思考 when both appear),
+  a muted note, and a caret that turns on open.
+- Regenerate and branch stay on the answer: a message that only ran a tool no
+  longer wears them, so a shell command cannot read as the reply it produced.
+- Reasoning shows itself while a reply is still being written and folds away once
+  the answer has landed, so a finished turn reads as its answer plus one line of
+  what produced it. A reader's own toggle outranks both states and survives
+  settling and later renders.
+- Show how long a tool call has been running, and keep the counter live while it
+  runs. A long sub-agent dispatch is no longer indistinguishable from a hang.
+- Delete a prompt together with the reply it produced, edit a prompt and re-run
+  it, or regenerate a reply, from buttons on the message itself. These rebuild the
+  session into a new file and switch pi onto it, so the previous state stays on
+  disk and switching back undoes the change.
+- Branch a new session from any reply. The existing fork picker only listed
+  prompts; a reply now forks at the prompt that opens its turn.
+- A message that carried only an image can be deleted, edited, or branched like
+  any other prompt. An empty prompt text is no longer read as a malformed request
+  and dropped without a word.
+- The running-tool counter no longer drifts by the host's clock skew, and it stays
+  visible while the tool box is expanded.
+- `trellis_subagent`'s deadline now covers the whole run: each child in a chain is
+  handed whatever is left of it, so six prompts cannot hold a turn for six times
+  the budget.
+- Delete, edit, and regenerate write a session whose branch is a real chain: the
+  surviving prefix kept its parent pointers, so the rewrite no longer names its
+  last entry as the first entry's parent. pi now opens the result instead of
+  rejecting it.
+- Restoring a session on startup skips files pi cannot open, so one unreadable
+  file can no longer leave the sidebar dead after a reload.
+- Editing a prompt and submitting the same text re-runs it, the way PI-Desktop
+  does: only an empty prompt is refused.
+- Delete, edit, and regenerate now actually move pi onto the rewritten session:
+  the switch sent the file under the wrong field name, so pi rejected every one
+  of them with an error about a missing path.
+- Those actions on a session's only prompt start a fresh session instead of
+  writing a file pi cannot open — a session with no user turn makes pi's own
+  loader throw.
+- The row actions are icon buttons labelled the way PI-Desktop labels them
+  (编辑并重新发送 / 删除消息 / 重新生成 / 从此回复创建分支). They sit under the
+  message rather than inside it — a reply's row on its left edge, the reader's
+  own on the right — and the edit dialog reads 编辑并重新发送 · 重试 · 取消.
 
 ## 1.0.3
 
