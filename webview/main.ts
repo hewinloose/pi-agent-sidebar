@@ -1965,6 +1965,17 @@ function runAction(
  */
 function handleMessageAction(element: HTMLElement): void {
 	const action = element.dataset.messageAction;
+	// Copy needs no session cursor: it reads the answer this row already shows, so
+	// it works for a windowed transcript and while a turn is still running.
+	if (action === "copy") {
+		const text = transcriptController.copyTextFor(element.dataset.copyKey ?? "");
+		if (text === undefined) {
+			showToast("这条消息没有可复制的内容", "error");
+			return;
+		}
+		void navigator.clipboard.writeText(text).then(() => showToast("已复制", "info"));
+		return;
+	}
 	const ordinal = Number(element.dataset.promptOrdinal);
 	if (!action || !Number.isInteger(ordinal) || ordinal < 0) return;
 	if (ui.busy || ui.state.isStreaming === true) {
@@ -1976,21 +1987,11 @@ function handleMessageAction(element: HTMLElement): void {
 		showToast("That message is no longer in view", "error");
 		return;
 	}
+	// No confirmation dialog: the trash button is the confirmation, the same way
+	// PI-Desktop's is. The rewrite leaves the original session file untouched, so
+	// switching back to it is still the undo.
 	if (action === "delete") {
-		modalController.openTextPrompt({
-			title: "删除消息",
-			label: describeDeletedPrompt(text),
-			initialValue: "",
-			confirmLabel: "删除",
-			cancelLabel: "取消",
-			onSubmit: (value) => {
-				if (value.trim() !== DELETE_PROMPT_CONFIRMATION) {
-					showToast("未删除", "info");
-					return;
-				}
-				runAction("deletePrompt", { promptOrdinal: ordinal, text });
-			},
-		});
+		runAction("deletePrompt", { promptOrdinal: ordinal, text });
 		return;
 	}
 	if (action === "edit") {
@@ -2025,31 +2026,6 @@ function promptTextFor(ordinal: number): string | undefined {
 		next += 1;
 	}
 	return undefined;
-}
-
-/** How much of a prompt a dialog label quotes back. */
-const PROMPT_PREVIEW_LENGTH = 60;
-
-/** The word the delete confirmation asks for, so a stray Enter cannot delete a turn. */
-const DELETE_PROMPT_CONFIRMATION = "删除";
-
-/**
- * The reader-facing copy of a prompt, clipped for a dialog label.
- *
- * The `<pi-context>` block is stripped the way the row strips it: the dialog is
- * about the words the reader typed, not the context injected above them.
- */
-function truncateForPrompt(text: string, max = PROMPT_PREVIEW_LENGTH): string {
-	const visible = text.replace(/^<pi-context>[\s\S]*?<\/pi-context>\s*/u, "");
-	const single = visible.replace(/\s+/gu, " ").trim();
-	return single.length <= max ? single : `${single.slice(0, max - 1)}…`;
-}
-
-/** What the delete confirmation says about the message it is about to remove. */
-function describeDeletedPrompt(text: string): string {
-	const preview = truncateForPrompt(text);
-	const consequence = preview ? `回复「${preview}」会一并删除。` : "这条消息的回复会一并删除。";
-	return `${consequence}输入「${DELETE_PROMPT_CONFIRMATION}」确认。`;
 }
 
 function post(message: WebviewToHostMessage): void {

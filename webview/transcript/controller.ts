@@ -102,6 +102,26 @@ private belongsToLiveReply(thinkingKey: string): boolean {
  return Boolean(live && thinkingKey.startsWith(`${this.messageKey(live)}-thinking-`));
 }
 
+
+/**
+ * The answer text behind a rendered row, for the row's Copy action.
+ *
+ * The button carries the row's transcript key rather than its text: the same
+ * answer is already in the DOM as rendered HTML, and putting the markdown source
+ * back into an attribute would duplicate every answer in the page. Resolving here
+ * reads pi's own content, so a fence or a table keeps the shape the reader would
+ * paste elsewhere.
+ */
+copyTextFor(messageKey: string): string | undefined {
+ const { state } = this.options;
+ const all = state.streamingMessage ? [...state.messages, state.streamingMessage] : state.messages;
+ for (const message of all) {
+  if (this.messageKey(message) !== messageKey) continue;
+  const text = contentText(message.content);
+  if (text.trim()) return text;
+ }
+ return undefined;
+}
  private identity(message: PiMessage): MessageIdentity {
   const existing = this.identities.get(message);
   if (existing) return existing;

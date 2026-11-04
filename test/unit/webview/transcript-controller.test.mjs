@@ -131,3 +131,22 @@ test("reasoning visibility survives being handed to the renderer detached", asyn
  const { isThinkingExpanded } = controller;
  assert.equal(isThinkingExpanded("message-1-thinking-0"), false);
 });
+
+test("a reply's copy cursor resolves to pi's own answer text", async (t) => {
+ const { controller, state } = await transcriptHarness(t);
+ const reply = {
+  role: "assistant",
+  content: [{ type: "text", text: "first line" }, { type: "text", text: "second line" }],
+ };
+ state.messages = [message("user", "question", 1), reply];
+ // pi sends one block per paragraph, and the clipboard keeps that line structure
+ // instead of gluing two paragraphs into one.
+ assert.equal(controller.copyTextFor(controller.messageKey(reply)), "first line\nsecond line");
+ // A row the snapshot no longer holds copies nothing; the caller toasts instead
+ // of writing "undefined" to the clipboard.
+ assert.equal(controller.copyTextFor("message-does-not-exist"), undefined);
+ // Reasoning is not an answer: a step carries no copyable prose.
+ const step = { role: "assistant", content: [{ type: "thinking", thinking: "hmm" }] };
+ state.messages = [message("user", "question", 1), step];
+ assert.equal(controller.copyTextFor(controller.messageKey(step)), undefined);
+});

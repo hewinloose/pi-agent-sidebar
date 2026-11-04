@@ -257,17 +257,21 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
  }
 /**
  * The row-action glyphs, taken from PI-Desktop's lucide set (`components/icons.tsx`:
- * `PencilLine`, `Trash2`, `RefreshCw`, `GitFork`) and drawn at the same 13px with
- * the same 1.75 stroke so the two sidebars read alike.
+ * `Copy`, `PencilLine`, `Trash2`, `RefreshCw`, `GitFork`) and drawn at the same
+ * 13px with the same 1.75 stroke so the two sidebars read alike.
  *
  * They are built here instead of being emitted as HTML: the transcript sanitizer
  * keeps DOMPurify's HTML profile, which drops SVG on sight.
  */
 interface IconShape {
- tag: "path" | "circle";
+ tag: "path" | "circle" | "rect";
  attrs: Record<string, string>;
 }
 const MESSAGE_ACTION_GLYPHS: Record<string, readonly IconShape[]> = {
+ copy: [
+  { tag: "rect", attrs: { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" } },
+  { tag: "path", attrs: { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" } },
+ ],
  edit: [
   { tag: "path", attrs: { d: "M12 20h9" } },
   { tag: "path", attrs: { d: "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" } },

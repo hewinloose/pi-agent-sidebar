@@ -744,8 +744,20 @@ test("a row carries its history actions only when its prompt is addressable", as
 
 		const reply = { role: "assistant", content: [{ type: "text", text: "answer" }] };
 		const replyHtml = loaded.module.messageHtml(reply, new Map(), new Map(), false, "message-1", undefined, 3);
-		assert.match(replyHtml, /data-message-action="regenerate"/u);
+		// PI-Desktop's order on a reply: read it, branch it, re-run it.
+		assert.match(replyHtml, /data-message-action="copy"/u);
 		assert.match(replyHtml, /data-message-action="fork"/u);
+		assert.match(replyHtml, /data-message-action="regenerate"/u);
+		assert.ok(
+			replyHtml.indexOf('data-message-action="copy"') <
+				replyHtml.indexOf('data-message-action="fork"') &&
+				replyHtml.indexOf('data-message-action="fork"') <
+					replyHtml.indexOf('data-message-action="regenerate"'),
+		);
+		// Copy names the message it belongs to instead of a prompt ordinal: the
+		// answer lives with the message, and the row's own key is the cursor.
+		assert.match(replyHtml, /data-message-action="copy" data-copy-key="message-1"/u);
+		assert.match(replyHtml, /title="复制"/u);
 		// Replies keep the row on their own left edge, and never on the reader's.
 		assert.ok(replyHtml.indexOf("</article>") < replyHtml.indexOf('class="message-actions'));
 		assert.equal(replyHtml.includes("user-actions"), false);
@@ -753,6 +765,12 @@ test("a row carries its history actions only when its prompt is addressable", as
 		assert.match(replyHtml, /title="从此回复创建分支"/u);
 		// Neither reply action is destructive, so neither wears the danger class.
 		assert.equal(replyHtml.includes("message-action danger"), false);
+		// Copy is not a history action: a reply whose prompt fell out of the window
+		// still copies, while the two actions that need the ordinal stay away.
+		const orphan = loaded.module.messageHtml(reply, new Map(), new Map(), false, "message-9");
+		assert.match(orphan, /data-message-action="copy"/u);
+		assert.equal(orphan.includes("data-message-action=\"fork\""), false);
+		assert.equal(orphan.includes("data-message-action=\"regenerate\""), false);
 	} finally {
 		await loaded.dispose();
 	}

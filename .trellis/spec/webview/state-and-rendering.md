@@ -148,10 +148,14 @@ to the DOM.
 ## 9. Row actions address prompts by session-wide ordinal
 
 Delete / edit / regenerate / fork are rendered by `messageActionsHtml` as
-`[data-message-action]` buttons carrying `data-prompt-ordinal`. Buttons are
-always in the DOM; the handler refuses while pi is busy, so a stream start never
-rebuilds a row.
-
+`[data-message-action]` buttons carrying `data-prompt-ordinal`. A reply's row
+also carries Copy, first in the row (复制 · 从此回复创建分支 · 重新生成), and it
+addresses a message rather than a prompt: `data-copy-key` holds the row's
+transcript key, and `TranscriptController.copyTextFor()` resolves it to pi's own
+answer text. Copy therefore needs no ordinal — it stays available on a row whose
+opening prompt fell outside the window, and while a turn is running. The four
+history buttons are always in the DOM; the handler refuses them while pi is busy,
+so a stream start never rebuilds a row.
 The ordinal is computed by `TranscriptController.promptOrdinals()` over the whole
 snapshot — **not** the rendered window — and offset by
 `state.omittedPromptCount`, which the host supplies because a windowed snapshot

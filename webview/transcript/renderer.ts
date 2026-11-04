@@ -276,7 +276,7 @@ function userMessageHtml(message: PiMessage, promptOrdinal?: number): string {
  * be stripped before it ever reached the page.
  */
 interface MessageActionSpec {
-	action: "edit" | "delete" | "regenerate" | "fork";
+	action: "copy" | "edit" | "delete" | "regenerate" | "fork";
 	/** PI-Desktop `chat.*` copy, zh-CN. */
 	label: string;
 	danger?: boolean;
@@ -288,13 +288,30 @@ const USER_MESSAGE_ACTIONS: readonly MessageActionSpec[] = [
 ];
 
 const ASSISTANT_MESSAGE_ACTIONS: readonly MessageActionSpec[] = [
-	{ action: "regenerate", label: "重新生成" },
+	{ action: "copy", label: "复制" },
 	{ action: "fork", label: "从此回复创建分支" },
+	{ action: "regenerate", label: "重新生成" },
 ];
 
-function messageActionsHtml(kind: "user" | "assistant", promptOrdinal?: number): string {
-	if (promptOrdinal === undefined) return "";
-	const actions = kind === "user" ? USER_MESSAGE_ACTIONS : ASSISTANT_MESSAGE_ACTIONS;
+/**
+ * Renders one row's buttons.
+ *
+ * Copy is the one action that needs no session cursor: it reads the answer the
+ * row already shows, so it stays available even when the prompt that opens the
+ * turn fell outside the rendered window. The three history actions do need the
+ * ordinal, and a dead click on a row whose prompt is unreachable is worse than
+ * no button at all.
+ */
+function messageActionsHtml(
+	kind: "user" | "assistant",
+	promptOrdinal?: number,
+	copyKey?: string,
+): string {
+	const spec = kind === "user" ? USER_MESSAGE_ACTIONS : ASSISTANT_MESSAGE_ACTIONS;
+	const actions = spec.filter((item) =>
+		item.action === "copy" ? copyKey !== undefined : promptOrdinal !== undefined,
+	);
+	if (actions.length === 0) return "";
 	// The row sits *outside* the bubble: PI-Desktop keeps the actions under the
 	// message, aligned to the side the bubble is aligned to, so the buttons never
 	// land inside a framed turn.
@@ -303,7 +320,11 @@ function messageActionsHtml(kind: "user" | "assistant", promptOrdinal?: number):
 		.map((item) => {
 			const label = escapeHtml(item.label);
 			const danger = item.danger ? " danger" : "";
-			return `<button type="button" class="message-action${danger}" data-message-action="${item.action}" data-prompt-ordinal="${promptOrdinal}" title="${label}" aria-label="${label}"></button>`;
+			const target =
+				item.action === "copy"
+					? ` data-copy-key="${escapeHtml(copyKey ?? "")}"`
+					: ` data-prompt-ordinal="${String(promptOrdinal)}"`;
+			return `<button type="button" class="message-action${danger}" data-message-action="${item.action}"${target} title="${label}" aria-label="${label}"></button>`;
 		})
 		.join("");
 	return `<div class="message-actions${alignment}">${buttons}</div>`;
@@ -476,10 +497,14 @@ function assistantMessageHtml(
 		isThinkingExpanded,
 	);
 	// The row belongs to the answer, not to the work that led to it: a message
-	// holding only reasoning or a tool call is a step, and hanging "regenerate"
-	// under a shell command reads as if the command were the reply.
+	// holding only reasoning or a tool call is a step, and hanging Copy or
+	// "regenerate" under a shell command reads as if the command were the reply.
+	// `messageKey` is handed over as the copy cursor: the answer text lives with
+	// the message, and the button must name which message it belongs to.
 	const hasAnswer = sections.some((section) => section.key.startsWith("content-"));
-	const actions = hasAnswer ? messageActionsHtml("assistant", promptOrdinal) : "";
+	const actions = hasAnswer
+		? messageActionsHtml("assistant", promptOrdinal, messageKey)
+		: "";
 	return `<article class="message assistant-message">${sections
 		.map((section) => section.html)
 		.join("")}</article>${actions}`;
