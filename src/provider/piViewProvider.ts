@@ -23,6 +23,7 @@ import {
 } from "./missedReplies.js";
 import { PiRpcClient } from "../rpc/piRpcClient.js";
 import { buildPrompt } from "../services/promptBuilder.js";
+import { TrellisTasks, trellisTaskPrompt } from "../services/trellisTasks.js";
 import {
 	parseCommandsResponse,
 	parseForkMessagesResponse,
@@ -178,7 +179,39 @@ export class PiViewProvider
 	 */
 	private readonly missedReplies = new MissedReplyQueue();
 	private shutdownPromise: Promise<void> | undefined;
-	private statusBarItem: vscode.StatusBarItem | undefined;
+	/**
+	 * The phase last shown in the title bar. Kept so a rebind can redraw without
+	 * waiting for the next message.
+	 */
+	private viewPhase:
+		| "idle"
+		| "starting"
+		| "ready"
+		| "disconnected"
+		| "error"
+		| "no-workspace" = "idle";
+	private viewTitleItem: vscode.StatusBarItem | undefined;
+	/**
+	 * The state last written to the title-bar item, so a message that leaves it
+	 * unchanged does not redraw it.
+	 */
+	private viewTitleState = "";
+	/**
+	 * Set once a runtime has come up in this window. A later reveal must not count
+	 * as a first launch even if that runtime has since exited.
+	 */
+	private started = false;
+	/** The in-flight `openChat`, so a second click joins the first instead of racing it. */
+	private openingChat: Promise<void> | undefined;
+	/**
+	 * One-shot: the next start must not resume the stored session.
+	 *
+	 * `openChat` asks for a brand-new conversation, and resuming first would paint
+	 * the previous one into the transcript before `new_session` replaced it — a
+	 * visible flash of someone else's conversation. Cleared as soon as the launch
+	 * arguments are built, so a later restart restores normally.
+	 */
+	private startWithoutResume = false;
 	private readonly sessionMutations = new AsyncQueue();
 	private sessionMutationPending = 0;
 	private readonly capabilities = new PiCapabilityTracker();
@@ -193,6 +226,7 @@ export class PiViewProvider
 			(vscode.workspace.workspaceFolders ?? []).map((entry) => entry.uri.fsPath),
 		() => this.workspaceFolder?.uri.fsPath,
 	);
+	private readonly trellis = new TrellisTasks();
 
 	public constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -330,6 +364,56 @@ export class PiViewProvider
 	}
 
 	/**
+	 * Opens the sidebar from the editor title button.
+	 *
+	 * A window that has never run pi gets one started on a brand-new session, with
+	 * the stored session deliberately not resumed: resuming first would paint the
+	 * previous conversation into the transcript and then replace it, so the reader
+	 * saw someone else's chat flash by. Later clicks only reveal the view.
+	 */
+	public async openChat(): Promise<void> {
+		// A click that arrives while the first one is still opening joins it rather
+		// than starting a second: two `openChat` calls that both read `firstLaunch`
+		// before either started the runtime would each create a session.
+		if (this.openingChat) return this.openingChat;
+		const opening = this.openChatOnce().finally(() => {
+			if (this.openingChat === opening) this.openingChat = undefined;
+		});
+		this.openingChat = opening;
+		return opening;
+	}
+
+	private async openChatOnce(): Promise<void> {
+		// Read before the reveal: the view's own `ready` handler starts the runtime
+		// as soon as it loads, and the launch arguments are built from this flag.
+		const firstLaunch = !this.client && !this.startPromise && !this.started;
+		// Only a first launch goes on to start a runtime. A later click must not
+		// revive one that has exited — this entry only opens the sidebar.
+		if (!firstLaunch) {
+			await this.reveal();
+			return;
+		}
+		this.startWithoutResume = true;
+		await this.reveal();
+		let client: PiRpcClient;
+		try {
+			client = await this.ensureClient();
+		} catch (error) {
+			// The flag has to go even when no launch happens: an untrusted workspace
+			// or a missing folder returns before the arguments are built, and a stale
+			// flag would silently skip the restore on some later start.
+			this.startWithoutResume = false;
+			// No runtime is the view's own story to tell — it already says why.
+			if (error instanceof RuntimeUnavailableError) return;
+			throw error;
+		}
+		await this.enqueueSessionMutation(async (generation) => {
+			this.assertSessionMutationContext(client, generation);
+			await this.startFreshSession(client, generation);
+		});
+	}
+
+	/**
 	 * Brings the webview back in step after it was hidden.
 	 *
 	 * Skipped unless a post was actually refused while hidden: a snapshot rebuilds
@@ -408,7 +492,7 @@ export class PiViewProvider
 	): Promise<void> {
 		if (!editor) {
 			void vscode.window.showInformationMessage(
-				"Open a file in the editor to use this Pi action.",
+				"请先在编辑器中打开一个文件，再使用此 Pi 操作。",
 			);
 			return;
 		}
@@ -473,15 +557,15 @@ export class PiViewProvider
 			result && typeof result.path === "string" ? result.path : undefined;
 		if (!exportedPath) {
 			void vscode.window.showWarningMessage(
-				"Pi did not return an exported file path.",
+				"pi 没有返回导出的文件路径。",
 			);
 			return;
 		}
 		const choice = await vscode.window.showInformationMessage(
-			`Exported session to ${exportedPath}`,
-			"Open",
+			`已导出会话到 ${exportedPath}`,
+			"打开",
 		);
-		if (choice === "Open") {
+		if (choice === "打开") {
 			const document = await vscode.workspace.openTextDocument(
 				vscode.Uri.file(exportedPath),
 			);
@@ -491,8 +575,8 @@ export class PiViewProvider
 
 	public async renameSession(): Promise<void> {
 		const name = await vscode.window.showInputBox({
-			title: "Rename Pi Session",
-			prompt: "Enter a display name for the current session.",
+			title: "重命名 Pi 会话",
+			prompt: "为当前会话输入一个显示名称。",
 			value:
 				typeof this.state.sessionName === "string" ? this.state.sessionName : "",
 			ignoreFocusOut: true,
@@ -510,8 +594,8 @@ export class PiViewProvider
 	private applySessionName(name: string): Promise<void> {
 		return this.enqueueSessionMutation(async (generation) => {
 			const trimmed = name.trim();
-			if (!trimmed) throw new Error("Session name cannot be empty.");
-			if (trimmed.length > 200) throw new Error("Session name is too long.");
+			if (!trimmed) throw new Error("会话名称不能为空。");
+			if (trimmed.length > 200) throw new Error("会话名称过长。");
 			const client = await this.ensureClient();
 			this.assertSessionMutationContext(client, generation);
 			await client.request({ type: "set_session_name", name: trimmed });
@@ -522,52 +606,70 @@ export class PiViewProvider
 		});
 	}
 
-	public bindStatusBar(item: vscode.StatusBarItem): void {
-		this.statusBarItem = item;
-		this.updateStatusBar("starting");
+	/**
+	 * The view title is the only chrome the extension owns next to the sidebar, and
+	 * it appears exactly when the sidebar does. A window status-bar entry had to be
+	 * shown in every window and reported a runtime that was not serving the reader
+	 * — "Pi starting" sat there for as long as the sidebar stayed closed.
+	 */
+	public bindViewTitle(item: vscode.StatusBarItem): void {
+		this.viewTitleItem = item;
+		// The item is created before the first render on purpose; render it now so
+		// the title bar carries the current phase from the moment it is bound.
+		this.updateViewTitle(this.viewPhase);
 	}
-
-	private updateStatusBar(
-		phase: "starting" | "ready" | "disconnected" | "error" | "no-workspace",
+	private updateViewTitle(
+		phase:
+			| "idle"
+			| "starting"
+			| "ready"
+			| "disconnected"
+			| "error"
+			| "no-workspace",
 	): void {
-		const item = this.statusBarItem;
+		const item = this.viewTitleItem;
 		if (!item) return;
+		this.viewPhase = phase;
 		const modelName = this.state.model?.name ?? this.state.model?.id;
-		let icon = "$(sparkle)";
-		let label = "Pi";
-		switch (phase) {
-			case "ready":
-				icon = this.streaming ? "$(sync~spin)" : "$(sparkle)";
-				label = modelName ? `Pi · ${modelName}` : "Pi";
-				break;
-			case "starting":
-				icon = "$(loading~spin)";
-				label = "Pi starting";
-				break;
-			case "disconnected":
-				icon = "$(debug-disconnect)";
-				label = "Pi stopped";
-				break;
-			case "error":
-				icon = "$(error)";
-				label = "Pi error";
-				break;
-			case "no-workspace":
-				icon = "$(folder)";
-				label = "Pi";
-				break;
-			default:
-				break;
-		}
-		item.text = `${icon} ${label}`;
-		const tooltipParts = ["Open Pi Agent"];
-		if (modelName) tooltipParts.push(`Model: ${modelName}`);
-		if (this.state.thinkingLevel)
-			tooltipParts.push(`Thinking: ${this.state.thinkingLevel}`);
+		const thinking = this.state.thinkingLevel ?? "";
 		const contextPercent = this.state.contextPercent;
+		// Every value in the tooltip is part of the key: `ready` carries each
+		// snapshot refresh, which is exactly when the model, thinking level and
+		// context change. Keying on phase and streaming alone left them stale.
+		const state = [
+			phase,
+			this.streaming ? "streaming" : "idle",
+			modelName ?? "",
+			thinking,
+			typeof contextPercent === "number" ? String(contextPercent) : "",
+		].join("|");
+		if (state === this.viewTitleState) return;
+		this.viewTitleState = state;
+		// No text: the view title already names the sidebar. Only the phase badge
+		// is added to it, and a running turn gets the spinner.
+		if (phase === "starting") item.text = "$(loading~spin)";
+		else if (phase === "ready" && this.streaming) item.text = "$(sync~spin)";
+		else if (phase === "disconnected") item.text = "$(debug-disconnect)";
+		else if (phase === "error") item.text = "$(error)";
+		else item.text = "$(sparkle)";
+		const tooltipParts = ["Pi Agent"];
+		if (phase === "idle") tooltipParts.push("pi 尚未启动。");
+		else if (phase === "starting") tooltipParts.push("pi 正在启动…");
+		else if (phase === "ready") tooltipParts.push("pi 已就绪。");
+		else if (phase === "disconnected") tooltipParts.push("pi 已停止。");
+		else if (phase === "error") tooltipParts.push("pi 出错了。");
+		else if (phase === "no-workspace")
+			// pi was never started because there was nowhere to start it, so this
+			// must not read as a failure. No command is attached: revealing the view
+			// is what reports the actual reason.
+			tooltipParts.push("打开文件夹并信任它即可使用 pi。");
+		if (modelName) tooltipParts.push(`模型：${modelName}`);
+		if (thinking) tooltipParts.push(`思考等级：${thinking}`);
 		if (typeof contextPercent === "number")
-			tooltipParts.push(`Context: ${contextPercent}%`);
+			tooltipParts.push(`上下文：${contextPercent}%`);
 		item.tooltip = tooltipParts.join("\n");
+		// A status bar item is hidden until it is shown, whether or not it is
+		// scoped to a view. Without this the badge never appeared at all.
 		item.show();
 	}
 
@@ -596,11 +698,11 @@ export class PiViewProvider
 	public async createNewSession(requireConfirmation = true): Promise<boolean> {
 		if (requireConfirmation && (this.state.messageCount ?? 0) > 0) {
 			const choice = await vscode.window.showWarningMessage(
-				"Start a new pi session? The current session remains available in history.",
+				"要新建一个 pi 会话吗？当前会话仍保留在会话历史中。",
 				{ modal: true },
-				"New Session",
+				"新建会话",
 			);
-			if (choice !== "New Session") return false;
+			if (choice !== "新建会话") return false;
 		}
 		const references = this.composerReferenceStore.snapshot();
 		const attachments = this.attachmentStore.resolve(
@@ -622,6 +724,66 @@ export class PiViewProvider
 			return true;
 		});
 	}
+
+	/**
+	 * Creates a Trellis task and hands requirement exploration to pi.
+	 *
+	 * The extension owns only the two facts a task cannot be created without —
+	 * title and request — and delegates everything else: the directory layout to
+	 * Trellis's own `task.py`, and the requirements conversation to pi.
+	 */
+	public async createTrellisTask(): Promise<void> {
+		const generation = this.workspaceGeneration;
+		const folder = await this.selectWorkspaceFolder();
+		if (!folder) throw new Error("请先打开一个工作区文件夹，才能新建 Trellis 任务。");
+		const root = folder.uri.fsPath;
+		if (!(await this.trellis.available(root)))
+			throw new Error("此工作区没有 Trellis 环境（缺少 .trellis/scripts/task.py）。");
+
+		const title = await vscode.window.showInputBox({
+			title: "新建 Trellis 任务",
+			prompt: "任务标题",
+			placeHolder: "例如：在输入区上方显示模型与上下文用量",
+			ignoreFocusOut: true,
+			validateInput: (value) => (value.trim() ? undefined : "请填写任务标题。"),
+		});
+		if (title === undefined) return;
+		const description = await vscode.window.showInputBox({
+			title: "新建 Trellis 任务",
+			prompt: "这个任务要改什么？Trellis 会用这段文字初始化 prd.md。",
+			placeHolder: "例如：在输入区上方显示模型和上下文用量",
+			ignoreFocusOut: true,
+			validateInput: (value) => (value.trim() ? undefined : "请填写任务需求。"),
+		});
+		if (description === undefined) return;
+
+		// The task belongs to the folder that was current when the dialogs opened; a
+		// workspace switch mid-flow must not write it into the old folder and then
+		// hand pi a relative path that resolves somewhere else.
+		if (generation !== this.workspaceGeneration)
+			throw new Error("工作区已切换，Trellis 任务未创建。");
+		const taskDir = await vscode.window.withProgress(
+			{
+				location: vscode.ProgressLocation.Notification,
+				title: "正在创建 Trellis 任务…",
+			},
+			() => this.trellis.create(root, title, description),
+		);
+		this.output.appendLine(`[trellis] Created ${taskDir}`);
+		if (generation !== this.workspaceGeneration) return;
+
+		await this.reveal();
+		const client = await this.ensureClient();
+		if (generation !== this.workspaceGeneration) return;
+		// Not a session mutation: the task exists regardless, and the prompt only
+		// starts the requirements conversation in whatever session is open.
+		await client.request({
+			type: "prompt",
+			message: trellisTaskPrompt(taskDir, title, description),
+			streamingBehavior: "followUp",
+		});
+	}
+
 
 	public async restart(): Promise<void> {
 		await this.startClient(true);
@@ -727,7 +889,7 @@ export class PiViewProvider
 			this.attachmentStore,
 		);
 		if (!prompt.message.trim() && prompt.images.length === 0)
-			throw new Error("Enter a message or attach context.");
+			throw new Error("请输入消息或添加要附带的上下文。");
 		await client.request({
 			type: "prompt",
 			message: prompt.message,
@@ -1328,16 +1490,20 @@ export class PiViewProvider
 			args.push("--approve");
 		else args.push("--no-approve");
 
-		if (configuration.get<boolean>("restoreSession", true)) {
+		// Read and clear in one step: this is about the launch that is happening now,
+		// not about every launch after it.
+		const resumeLast = !this.startWithoutResume;
+		this.startWithoutResume = false;
+		if (resumeLast && configuration.get<boolean>("restoreSession", true)) {
 			const lastSession = this.context.workspaceState.get<string>(
 				this.sessionStorageKey(folder),
 			);
 			if (
-					lastSession &&
-					(await fileExists(lastSession)) &&
-					(await isOpenableSession(lastSession))
-				)
-					args.push("--session", lastSession);
+				lastSession &&
+				(await fileExists(lastSession)) &&
+				(await isOpenableSession(lastSession))
+			)
+				args.push("--session", lastSession);
 		}
 		if (generation !== this.workspaceGeneration) return;
 
@@ -1353,6 +1519,7 @@ export class PiViewProvider
 		this.capabilities.reset();
 		this.attachClientListeners(client);
 		await client.start();
+		this.started = true;
 		if (generation !== this.workspaceGeneration) {
 			if (this.client === client) this.client = undefined;
 			await client.stop();
@@ -1393,7 +1560,12 @@ export class PiViewProvider
 				this.output.appendLine(`[protocol] ${toErrorMessage(error)}`);
 				return;
 			}
-			if (event.type === "agent_start") this.streaming = true;
+			if (event.type === "agent_start") {
+				this.streaming = true;
+				// The badge turns into the spinner on `streaming`, and nothing else
+				// repaints it until the turn settles, so it has to be asked here.
+				this.updateViewTitle(this.viewPhase);
+			}
 			if (event.type === "agent_settled") {
 				this.streaming = false;
 				void this.refreshSnapshot().catch((error: unknown) => {
@@ -1768,7 +1940,7 @@ export class PiViewProvider
 				? folders[0]
 				: await vscode.window.showWorkspaceFolderPick({
 						placeHolder:
-							"Select the workspace folder pi can edit and run commands in",
+							"选择 pi 可以在其中编辑文件、运行命令的工作区文件夹",
 					});
 		if (selected) {
 			this.workspaceFolder = selected;
@@ -1901,10 +2073,10 @@ export class PiViewProvider
 	}
 
 	private async post(message: HostToWebviewMessage): Promise<boolean> {
-		if (message.type === "connection") this.updateStatusBar(message.phase);
+		if (message.type === "connection") this.updateViewTitle(message.phase);
 		else if (message.type === "bootstrap" && message.phase === "no-workspace")
-			this.updateStatusBar("no-workspace");
-		else if (message.type === "snapshot") this.updateStatusBar("ready");
+			this.updateViewTitle("no-workspace");
+		else if (message.type === "snapshot") this.updateViewTitle("ready");
 		if (!this.view) return false;
 		const delivered = await this.view.webview.postMessage(message);
 		if (!delivered) {

@@ -41,11 +41,11 @@ export function createRuntimeRenderer(options: RuntimeRendererOptions) {
   const parts: string[] = [];
   const stats = usage.displayStats(ui.stats);
   const context = stats?.contextUsage?.percent;
-  if (typeof context === "number") parts.push(`${Math.round(context)}% context`);
+  if (typeof context === "number") parts.push(`上下文 ${Math.round(context)}%`);
   if (typeof stats?.cost === "number" && stats.cost > 0) parts.push(formatCost(stats.cost, locale));
   elements.runtimeMeta.hidden = !stats;
-  elements.runtimeMeta.textContent = parts.join(" \u00b7 ") || "Usage";
-  elements.runtimeMeta.title = "Session usage details";
+  elements.runtimeMeta.textContent = parts.join(" \u00b7 ") || "用量";
+  elements.runtimeMeta.title = "会话用量详情";
   if (elements.runtimeMeta.hidden) dismissUsagePanel();
   else if (!elements.usagePanel.hidden) renderUsagePanel();
  }

@@ -71,8 +71,8 @@ export function createSessionPanels(options: SessionPanelsOptions) {
   const action = document.createElement("button");
   action.type = "button";
   action.className = session.active ? "session-rename" : "session-delete";
-  action.title = session.active ? "Rename session" : "Delete session";
-  action.setAttribute("aria-label", `${session.active ? "Rename" : "Delete"} ${session.title}`);
+  action.title = session.active ? "重命名会话" : "删除会话";
+  action.setAttribute("aria-label", `${session.active ? "重命名" : "删除"} ${session.title}`);
   action.append(createCodicon(session.active ? "edit" : "trash"));
   action.addEventListener("click", () => session.active ? openRenamePrompt() : runAction("deleteSession", { path: session.path }));
   row.append(open, action);
@@ -193,7 +193,7 @@ export function createSessionPanels(options: SessionPanelsOptions) {
   row.setAttribute("aria-selected", "false");
   row.dataset.forkEntryId = candidate.entryId;
   row.tabIndex = -1;
-  row.title = candidate.text || "(empty prompt)";
+  row.title = candidate.text || "（空提示词）";
   const label = document.createElement("span");
   label.className = "fork-row-text";
   label.textContent = row.title;

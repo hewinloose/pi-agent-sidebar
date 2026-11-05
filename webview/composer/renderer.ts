@@ -59,8 +59,8 @@ export function createComposerRenderer(options: ComposerRendererOptions) {
    const remove = document.createElement("button");
    remove.type = "button";
    remove.className = "attachment-remove";
-   remove.title = `Remove ${attachment.label}`;
-   remove.setAttribute("aria-label", `Remove ${attachment.label}`);
+   remove.title = `移除 ${attachment.label}`;
+   remove.setAttribute("aria-label", `移除 ${attachment.label}`);
    remove.append(options.createCodicon("close"));
    remove.addEventListener("click", () => {
     ui.attachments = ui.attachments.filter((item) => item.id !== attachment.id);
@@ -117,14 +117,14 @@ export function createComposerRenderer(options: ComposerRendererOptions) {
  }
  function renderSelectors(): void {
   const model = ui.state.model;
-  elements.modelSelectValue.textContent = model ? model.name || model.id : "No model";
-  elements.modelSelect.title = model ? `${model.provider}/${model.id}` : "No model";
+  elements.modelSelectValue.textContent = model ? model.name || model.id : "未选择模型";
+  elements.modelSelect.title = model ? `${model.provider}/${model.id}` : "未选择模型";
   elements.thinkingSelectValue.textContent = ui.state.thinkingLevel || "off";
-  elements.thinkingSelect.title = ui.state.thinkingLevel || "Thinking level";
+  elements.thinkingSelect.title = ui.state.thinkingLevel || "思考等级";
   selectors.syncSelected();
  }
  function renderSendButton(): void {
-  const label = ui.busy ? "Stop pi" : "Send message";
+  const label = ui.busy ? "停止 pi" : "发送消息";
   const icon = elements.sendButton.querySelector("i");
   if (icon) icon.className = `codicon codicon-${ui.busy ? "debug-stop" : "arrow-up"}`;
   elements.sendButton.title = label;

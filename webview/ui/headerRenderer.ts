@@ -34,7 +34,7 @@ export function createHeaderRenderer(options: HeaderRendererOptions) {
   elements.sessionTitle.textContent = title;
   elements.sessionTitle.title = title;
   elements.emptyState.hidden = state.messages.length > 0 || Boolean(state.streamingMessage) || pending;
-  elements.emptyDetail.textContent = state.connection === "ready" ? `Ready in ${state.workspaceName}` : state.connectionDetail || "Starting pi...";
+  elements.emptyDetail.textContent = state.connection === "ready" ? `已在 ${state.workspaceName} 就绪` : state.connectionDetail || "正在启动 pi…";
   elements.app.classList.toggle("is-working", working);
   elements.connectionDot.className = `connection-dot ${state.connection}`;
   elements.connectionDot.title = connectionLabel(state);
@@ -61,13 +61,13 @@ export function createHeaderRenderer(options: HeaderRendererOptions) {
   elements.connectionBanner.hidden = !show;
   if (!show) return;
   const text = document.createElement("span");
-  text.textContent = state.connectionDetail || "Pi is unavailable.";
+  text.textContent = state.connectionDetail || "pi 当前不可用。";
   elements.connectionBanner.replaceChildren(text);
   if (state.connection === "no-workspace") return;
   const restart = document.createElement("button");
   restart.type = "button";
   restart.className = "text-button";
-  restart.append(options.createCodicon("refresh"), document.createTextNode(" Restart"));
+  restart.append(options.createCodicon("refresh"), document.createTextNode(" 重启"));
   restart.addEventListener("click", options.restart);
   elements.connectionBanner.append(restart);
  }
@@ -75,18 +75,19 @@ export function createHeaderRenderer(options: HeaderRendererOptions) {
 }
 
 export function connectionLabel(state: Pick<UiState, "connection" | "busy" | "connectionDetail">): string {
- if (state.connection === "ready") return state.busy ? "Pi is working" : "Pi is ready";
- if (state.connection === "starting") return "Pi is starting";
- if (state.connection === "no-workspace") return "Workspace required";
- return state.connectionDetail || "Pi is disconnected";
+ if (state.connection === "ready") return state.busy ? "pi 正在工作" : "pi 已就绪";
+ if (state.connection === "starting") return "pi 正在启动";
+ if (state.connection === "no-workspace") return "需要工作区";
+ return state.connectionDetail || "pi 已断开";
 }
+
 
 export function sessionTitle(state: Pick<UiState, "state" | "titleSeed" | "messages" | "workspaceName">): string {
  if (state.state.sessionName?.trim()) return state.state.sessionName.trim();
  const first = state.messages.find((message) => message.role === "user");
  const seed = state.titleSeed || (first ? contentText(first.content) : "");
  const text = seed.replace(/^<pi-context>[\s\S]*?<\/pi-context>\s*/u, "").trim();
- return truncate(text.replace(/\s+/gu, " "), 54) || "Untitled";
+ return truncate(text.replace(/\s+/gu, " "), 54) || "未命名";
 }
 function truncate(value: string, length: number): string {
  return value.length > length ? `${value.slice(0, Math.max(0, length - 1))}…` : value;

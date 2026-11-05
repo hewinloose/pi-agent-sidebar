@@ -838,7 +838,7 @@ function thinkingBlockHtml(
 	const body = expanded
 		? `<div class="thinking-text">${markdown(rawText)}</div>`
 		: `<div class="thinking-text"></div>`;
-	return `<div class="activity-item thinking-block${streamingState}${expandedClass}" data-thinking-key="${escapeHtml(thinkingKey)}" data-expandable="thinking" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}" aria-label="Reasoning, click to ${expanded ? "collapse" : "expand"}">${body}<div class="thinking-collapsed"><span class="thinking-label">Thinking</span><span class="thinking-dots" aria-hidden="true"><span class="thinking-dot-one">.</span><span class="thinking-dot-two">.</span><span class="thinking-dot-three">.</span></span></div></div>`;
+	return `<div class="activity-item thinking-block${streamingState}${expandedClass}" data-thinking-key="${escapeHtml(thinkingKey)}" data-expandable="thinking" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}" aria-label="推理过程，点击${expanded ? "收起" : "展开"}">${body}<div class="thinking-collapsed"><span class="thinking-label">思考过程</span><span class="thinking-dots" aria-hidden="true"><span class="thinking-dot-one">.</span><span class="thinking-dot-two">.</span><span class="thinking-dot-three">.</span></span></div></div>`;
 }
 
 /**

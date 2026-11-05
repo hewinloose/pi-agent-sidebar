@@ -1,6 +1,23 @@
 ﻿# Changelog
 
 ## Unreleased
+- The editor title bar — the row with "split editor" — carries the plugin's own
+  logo. Clicking it opens the Pi Agent sidebar, and a window that has never run
+  pi gets one started on a brand-new session. The stored session is not resumed
+  for that launch, so the previous conversation no longer flashes into view
+  before the new one replaces it. Later clicks only reveal the view.
+- New session moved out of the sidebar's title bar and back into the message
+  header, immediately right of session history; the title bar now holds only the
+  runtime phase badge (starting, streaming, stopped, error).
+- Every clickable control is described in Chinese, including the Enter/Alt+Enter
+  hint under the send button: the header buttons, the
+  composer (attach, slash commands, model, thinking level, send/stop), session
+  history rows, fork rows, the pinned prompt, copy-code and image buttons,
+  mermaid toggles, and the command-palette entries.
+- New Trellis Task is a command-palette command: it asks for a title and a
+  request, runs `.trellis/scripts/task.py create`, and hands the new task to pi
+  with `/trellis-brainstorm` so requirements land in `prd.md` before code. It
+  refuses outside a workspace that has `.trellis/scripts/task.py`.
 - Deleting, editing or regenerating a turn no longer scrolls the transcript to the
   bottom. A rewrite changes pi's session id without changing the conversation, so
   the sidebar treated it as opening a different session: it dropped every row and

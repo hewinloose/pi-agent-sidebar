@@ -44,8 +44,12 @@ updates, or what the provider does when the view is hidden or disposed.
   next reveal resyncs) and queues replies the Webview cannot ask for again
   through `missedReplies` / `isReplayableReply`, bounded by `MAX_MISSED_REPLIES`
   (32). Overflow is logged, not thrown. Do not bypass this by posting directly.
-- `post()` also drives the status bar from message type: `connection` (phase),
-  `bootstrap` with `phase: "no-workspace"`, and `snapshot` (ready).
+- `post()` also drives the chat view's title-bar item from message type:
+  `connection` (phase), `bootstrap` with `phase: "no-workspace"`, and `snapshot`
+  (ready). The item is created with `createStatusBarItem(viewId, …)`, so it is
+  shown in that view's title bar and nowhere else. The window status bar must not
+  carry the runtime phase: it outlives the sidebar and then reports a runtime
+  nobody is talking to.
 - Message ordering matters: a full snapshot must not be interleaved with deltas.
   Reuse the existing post path rather than adding an independent pump.
 - Replies that arrive after the view is disposed are dropped by the runtime, not

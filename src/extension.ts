@@ -33,13 +33,13 @@ class PiFixCodeActionProvider implements vscode.CodeActionProvider {
 		);
 		if (relevant.length === 0) return [];
 		const action = new vscode.CodeAction(
-			"Fix with Pi",
+			"用 Pi 修复",
 			vscode.CodeActionKind.QuickFix,
 		);
 		action.diagnostics = relevant;
 		action.command = {
 			command: "piAgentSidebar.explainDiagnostics",
-			title: "Fix with Pi",
+			title: "用 Pi 修复",
 		};
 		return [action];
 	}
@@ -50,17 +50,20 @@ export function activate(context: vscode.ExtensionContext): void {
 	const provider = new PiViewProvider(context, output);
 	activeProvider = provider;
 
-	const statusBarItem = vscode.window.createStatusBarItem(
+	// The runtime phase lives in the chat view's title bar rather than in the
+	// window status bar: the title bar exists exactly when the sidebar does,
+	// while a window-level entry outlived the runtime it described. It carries no
+	// command, and no label either — the title already names the sidebar.
+	const viewTitleItem = vscode.window.createStatusBarItem(
+		"piAgentSidebar.chatView",
 		vscode.StatusBarAlignment.Left,
 		100,
 	);
-	statusBarItem.command = "piAgentSidebar.open";
-	provider.bindStatusBar(statusBarItem);
-
+	provider.bindViewTitle(viewTitleItem);
 	context.subscriptions.push(
 		output,
 		provider,
-		statusBarItem,
+		viewTitleItem,
 		vscode.window.registerWebviewViewProvider(
 			PiViewProvider.viewType,
 			provider,
@@ -74,7 +77,11 @@ export function activate(context: vscode.ExtensionContext): void {
 			{ webviewOptions: { retainContextWhenHidden: true } },
 		),
 		vscode.commands.registerCommand("piAgentSidebar.open", () =>
-			provider.reveal(),
+			provider.openChat().catch((error: unknown) => {
+				void vscode.window.showWarningMessage(
+					error instanceof Error ? error.message : String(error),
+				);
+			}),
 		),
 		vscode.commands.registerCommand("piAgentSidebar.focusInput", () =>
 			provider.focusInputWithSelection(vscode.window.activeTextEditor),
@@ -94,10 +101,17 @@ export function activate(context: vscode.ExtensionContext): void {
 			await provider.reveal();
 			if (!(await provider.createNewSession(true))) {
 				void vscode.window.showInformationMessage(
-					"The pi session was not changed.",
+					"pi 会话未改动。",
 				);
 			}
 		}),
+		vscode.commands.registerCommand("piAgentSidebar.newTrellisTask", () =>
+			provider.createTrellisTask().catch((error: unknown) => {
+				void vscode.window.showWarningMessage(
+					error instanceof Error ? error.message : String(error),
+				);
+			}),
+		),
 		vscode.commands.registerCommand("piAgentSidebar.restart", () =>
 			provider.restart(),
 		),

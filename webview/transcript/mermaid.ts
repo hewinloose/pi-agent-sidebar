@@ -485,9 +485,9 @@ export function sequenceDiagramConfiguration(
 }
 
 const NATIVE_CLASS = "mermaid-diagram--native";
-const FULL_SIZE_TITLE = "View at full size";
-const FIT_TITLE = "Fit the column";
-const TOGGLE_SIZE_LABEL = "Toggle between fitted and full-size diagram";
+const FULL_SIZE_TITLE = "按原始大小查看";
+const FIT_TITLE = "适应列宽";
+const TOGGLE_SIZE_LABEL = "在适应列宽与原始大小之间切换";
 
 function mountDiagram(block: HTMLElement, svg: string): void {
 	const element = diagramElement(svg);
@@ -497,7 +497,7 @@ function mountDiagram(block: HTMLElement, svg: string): void {
 	}
 	normalizeDiagramSizing(element);
 	element.setAttribute("role", "img");
-	element.setAttribute("aria-label", "Mermaid diagram");
+	element.setAttribute("aria-label", "Mermaid 图表");
 	const diagram = document.createElement("button");
 	diagram.type = "button";
 	diagram.className = "mermaid-diagram";
@@ -634,7 +634,7 @@ function diagramSourceDisclosure(block: HTMLElement): HTMLDetailsElement {
 	const details = document.createElement("details");
 	details.className = "mermaid-source";
 	const summary = document.createElement("summary");
-	summary.textContent = "Diagram source";
+	summary.textContent = "图表源码";
 	details.append(summary);
 	if (source) details.append(source);
 	return details;

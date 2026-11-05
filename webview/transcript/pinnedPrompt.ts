@@ -165,7 +165,7 @@ export class PinnedPromptController {
 		this.options.row.classList.toggle("is-expanded", expanded);
 		this.options.toggle.hidden = !this.canExpand;
 		this.options.toggle.setAttribute("aria-expanded", String(expanded));
-		const label = expanded ? "Collapse this message" : "Expand this message";
+		const label = expanded ? "收起此消息" : "展开此消息";
 		this.options.toggle.title = label;
 		this.options.toggle.setAttribute("aria-label", label);
 	}

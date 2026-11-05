@@ -52,7 +52,7 @@ export class ModalController {
 		input.setAttribute("autocomplete", "off");
 		const actions = this.document.createElement("div");
 		actions.className = "modal-actions";
-		const cancel = this.createButton(options.cancelLabel ?? "Cancel", "secondary-button");
+		const cancel = this.createButton(options.cancelLabel ?? "取消", "secondary-button");
 		cancel.addEventListener("click", () => this.close());
 		const confirm = this.createButton(options.confirmLabel, "primary-button");
 		const submit = () => {
@@ -87,15 +87,15 @@ export class ModalController {
 	public openImage(options: ImagePreviewOptions): void {
 		// A path the host never resolved has no source to enlarge.
 		if (!options.src) return;
-		const dialog = this.createDialog(options.alt || "Image preview");
+		const dialog = this.createDialog(options.alt || "图片预览");
 		dialog.classList.add("modal-image");
 		const image = this.document.createElement("img");
 		image.className = "modal-image-picture";
 		image.src = options.src;
 		image.alt = options.alt;
 		const close = this.createButton("", "icon-button modal-image-close");
-		close.title = "Close preview";
-		close.setAttribute("aria-label", "Close preview");
+		close.title = "关闭预览";
+		close.setAttribute("aria-label", "关闭预览");
 		const icon = this.document.createElement("i");
 		icon.className = "codicon codicon-close";
 		icon.setAttribute("aria-hidden", "true");

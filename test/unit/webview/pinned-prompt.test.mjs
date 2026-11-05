@@ -228,7 +228,7 @@ test("the toggle appears only when the collapsed label overflows", async () => {
 		overflows.controller.sync();
 		assert.equal(overflows.toggle.hidden, false);
 		assert.equal(overflows.toggle.attributes.get("aria-expanded"), "false");
-		assert.equal(overflows.toggle.title, "Expand this message");
+ assert.equal(overflows.toggle.title, "展开此消息");
 	} finally {
 		await loaded.dispose();
 	}
@@ -262,11 +262,11 @@ test("expanding marks the row and relabels the toggle", async () => {
 		state.controller.toggleExpanded();
 		assert.equal(state.row.classList.contains("is-expanded"), true);
 		assert.equal(state.toggle.attributes.get("aria-expanded"), "true");
-		assert.equal(state.toggle.title, "Collapse this message");
+		assert.equal(state.toggle.title, "收起此消息");
 
 		state.controller.toggleExpanded();
 		assert.equal(state.row.classList.contains("is-expanded"), false);
-		assert.equal(state.toggle.title, "Expand this message");
+		assert.equal(state.toggle.title, "展开此消息");
 	} finally {
 		await loaded.dispose();
 	}

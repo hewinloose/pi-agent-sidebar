@@ -248,8 +248,8 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
    const button = document.createElement("button");
    button.type = "button";
    button.className = "copy-code-button icon-button";
-   button.title = "Copy code";
-   button.setAttribute("aria-label", "Copy code");
+   button.title = "复制代码";
+   button.setAttribute("aria-label", "复制代码");
    button.setAttribute("data-copy-code", "true");
    button.append(createCodicon("copy"));
    wrapper.append(button);
@@ -373,7 +373,7 @@ function setExpandedState(element: HTMLElement, expanded: boolean): void {
  const thinking = element.dataset.expandable === "thinking";
  element.classList.toggle(thinking ? "is-expanded" : "expanded", expanded);
  element.setAttribute("aria-expanded", expanded ? "true" : "false");
- if (thinking) element.setAttribute("aria-label", `Reasoning, click to ${expanded ? "collapse" : "expand"}`);
+ if (thinking) element.setAttribute("aria-label", `推理过程，点击${expanded ? "收起" : "展开"}`);
 }
 function applyMessageBoundaryClasses(slot: Element, message: PiMessage): void {
  const blocks = Array.isArray(message.content) ? message.content : [];

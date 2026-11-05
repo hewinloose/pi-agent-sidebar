@@ -7,7 +7,7 @@ test("header title preserves trimming, context stripping, title seed and truncat
  t.after(loaded.dispose);
  const { sessionTitle, connectionLabel } = loaded.module;
  const state = { state: {}, messages: [], titleSeed: "", workspaceName: "workspace" };
- assert.equal(sessionTitle(state), "Untitled");
+ assert.equal(sessionTitle(state), "未命名");
  state.state.sessionName = "  named  ";
  assert.equal(sessionTitle(state), "named");
  state.state.sessionName = " ";
@@ -17,8 +17,8 @@ test("header title preserves trimming, context stripping, title seed and truncat
  assert.equal(sessionTitle(state), "real prompt");
  state.titleSeed = "x".repeat(80);
  assert.equal(sessionTitle(state), `${"x".repeat(53)}…`);
- assert.equal(connectionLabel({ connection: "ready", busy: true }), "Pi is working");
- assert.equal(connectionLabel({ connection: "no-workspace" }), "Workspace required");
+ assert.equal(connectionLabel({ connection: "ready", busy: true }), "pi 正在工作");
+ assert.equal(connectionLabel({ connection: "no-workspace" }), "需要工作区");
 });
 
 test("runtime rows preserve unknown context, zero cost and reported token counts", async (t) => {
@@ -61,7 +61,7 @@ test("composer renderer preserves input caching, pending-submit and busy button 
  state.busy = true;
  renderer.renderSendButton();
  assert.equal(elements.sendButton.disabled, false, "stop remains available while busy");
- assert.equal(elements.sendButton.title, "Stop pi");
+ assert.equal(elements.sendButton.title, "停止 pi");
  state.connection = "error";
  renderer.renderAvailability();
  renderer.renderSendButton();

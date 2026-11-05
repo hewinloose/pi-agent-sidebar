@@ -65,7 +65,7 @@ export class SessionController {
    this.options.transcript.interrupt(detail);
    this.options.clearExtensionUi();
   }
-  this.options.announce(phase === "ready" ? "Pi is ready" : detail || `Pi is ${phase}`);
+  this.options.announce(phase === "ready" ? "pi 已就绪" : detail || `pi 状态：${phase}`);
   this.options.scheduleRender();
  }
 }

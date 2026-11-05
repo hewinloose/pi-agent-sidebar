@@ -291,7 +291,7 @@ test("only the active collapsed streaming thinking animates", async () => {
 		assert.match(active[0].html, /thinking-activity is-active-thinking/u);
 		assert.match(
 			active[0].html,
-			/<span class="thinking-label">Thinking<\/span><span class="thinking-dots" aria-hidden="true"><span class="thinking-dot-one">\.<\/span><span class="thinking-dot-two">\.<\/span><span class="thinking-dot-three">\.<\/span><\/span>/u,
+			/<span class="thinking-label">思考过程<\/span><span class="thinking-dots" aria-hidden="true"><span class="thinking-dot-one">\.<\/span><span class="thinking-dot-two">\.<\/span><span class="thinking-dot-three">\.<\/span><\/span>/u,
 		);
 
 		const beforeText = render([thinking, { type: "text", text: "answer" }], true, collapsed);

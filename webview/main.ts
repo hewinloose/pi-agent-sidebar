@@ -713,13 +713,14 @@ elements.sessionList.addEventListener("keydown", (event) => {
 			: index - 1;
 	rows[nextIndex]?.querySelector<HTMLButtonElement>(".session-open")?.focus();
 });
-// No confirmation: pi keeps the current conversation in session history, so
-// starting a new session never discards anything.
-elements.newSessionButton.addEventListener("click", () =>
-	runAction("newSession"),
-);
 elements.renameSessionButton.addEventListener("click", () =>
 	openRenamePrompt(),
+);
+// No confirmation: pi keeps the current conversation in session history, so
+// starting a new session never discards anything. Sits beside the history
+// button, which is where the session list is opened from.
+elements.newSessionButton.addEventListener("click", () =>
+	runAction("newSession"),
 );
 // Cloning replaces the active session, so it must wait for pi to go idle. The
 // button stays clickable while busy; the refusal is a toast, matching the other
@@ -1216,9 +1217,9 @@ function markPreviewableImage(image: HTMLImageElement): void {
 	image.tabIndex = 0;
 	image.setAttribute("role", "button");
 	// The alt text already names the picture; only a silent one needs a label.
-	if (!image.alt) image.setAttribute("aria-label", "Enlarge image");
+	if (!image.alt) image.setAttribute("aria-label", "放大图片");
 	if (image.title) return;
-	image.title = "Click to enlarge";
+	image.title = "点击放大";
 }
 
 /** Opens the enlarged view for one transcript picture. */
@@ -1331,7 +1332,7 @@ function applyMediaFallback(image: HTMLImageElement, source: string): void {
 	const fallback = document.createElement("span");
 	fallback.className = "message-media-fallback";
 	fallback.textContent = image.alt || source;
-	fallback.title = `Not an image this workspace can load: ${source}`;
+	fallback.title = `此工作区无法加载这张图片：${source}`;
 	image.replaceWith(fallback);
 }
 
@@ -2040,10 +2041,10 @@ function post(message: WebviewToHostMessage): void {
  */
 function openRenamePrompt(): void {
 	modalController.openTextPrompt({
-		title: "Rename session",
-		label: "Session name",
+		title: "重命名会话",
+		label: "会话名称",
 		initialValue: ui.state.sessionName ?? "",
-		confirmLabel: "Rename",
+		confirmLabel: "重命名",
 		maxLength: MAX_SESSION_NAME_LENGTH,
 		onSubmit: (name: string) => runAction("renameSession", { name }),
 	});
@@ -2092,8 +2093,8 @@ function updateComposerOverlayOffset(): void {
 function showSendHint(): void {
 	if (elements.sendButton.disabled) return;
 	const rows: Array<[keys: string[], label: string]> = [
-		[["Enter"], ui.busy ? "steer" : "send"],
-		[["Alt+Enter"], "follow-up"],
+		[["Enter"], ui.busy ? "引导当前回复" : "发送"],
+		[["Alt+Enter"], "追加消息"],
 	];
 	elements.sendHint.replaceChildren(
 		...rows.map(([keys, label]) => {

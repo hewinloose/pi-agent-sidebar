@@ -52,5 +52,5 @@ test("disconnect settles transcript and clears transient state, ready clears the
  calls.length = 0;
  controller.applyConnection("ready", "old detail");
  assert.equal(state.connectionDetail, "");
- assert.deepEqual(calls, [["announce", "Pi is ready"], ["render"]]);
+ assert.deepEqual(calls, [["announce", "pi 已就绪"], ["render"]]);
 });

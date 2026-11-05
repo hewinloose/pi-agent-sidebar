@@ -43,61 +43,66 @@
     "commands": [
       {
         "command": "piAgentSidebar.open",
-        "title": "Pi Agent: Open",
-        "icon": "$(sparkle)"
+        "title": "Pi Agent: 打开",
+        "icon": "assets/pi.svg"
       },
       {
         "command": "piAgentSidebar.focusInput",
-        "title": "Pi Agent: Focus Input with Selection"
+        "title": "Pi Agent: 聚焦输入框（含所选内容）"
       },
       {
         "command": "piAgentSidebar.newSession",
-        "title": "Pi Agent: New Session",
+        "title": "Pi Agent: 新建会话",
         "icon": "$(add)"
       },
       {
+        "command": "piAgentSidebar.newTrellisTask",
+        "title": "Pi Agent: 新建 Trellis 任务",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "piAgentSidebar.restart",
-        "title": "Pi Agent: Restart Runtime",
+        "title": "Pi Agent: 重启运行时",
         "icon": "$(refresh)"
       },
       {
         "command": "piAgentSidebar.showLogs",
-        "title": "Pi Agent: Show Logs",
+        "title": "Pi Agent: 查看日志",
         "icon": "$(output)"
       },
       {
         "command": "piAgentSidebar.renameSession",
-        "title": "Pi Agent: Rename Session",
+        "title": "Pi Agent: 重命名会话",
         "icon": "$(edit)"
       },
       {
         "command": "piAgentSidebar.exportHtml",
-        "title": "Pi Agent: Export Session to HTML",
+        "title": "Pi Agent: 导出会话为 HTML",
         "icon": "$(export)"
       },
       {
         "command": "piAgentSidebar.explainSelection",
-        "title": "Pi Agent: Explain Selection"
+        "title": "Pi Agent: 解释所选内容"
       },
       {
         "command": "piAgentSidebar.explainFile",
-        "title": "Pi Agent: Explain This File"
+        "title": "Pi Agent: 解释此文件"
       },
       {
         "command": "piAgentSidebar.refactorSelection",
-        "title": "Pi Agent: Refactor Selection"
+        "title": "Pi Agent: 重构所选内容"
       },
       {
         "command": "piAgentSidebar.generateTests",
-        "title": "Pi Agent: Generate Tests for Selection"
+        "title": "Pi Agent: 为所选内容生成测试"
       },
       {
         "command": "piAgentSidebar.explainDiagnostics",
-        "title": "Pi Agent: Explain Problems in Selection"
+        "title": "Pi Agent: 解释所选内容中的问题"
       },
       {
         "command": "piAgentSidebar.addFilesToInput",
-        "title": "Pi Agent: Add Files or Folders to Input"
+        "title": "Pi Agent: 将文件或文件夹添加到输入"
       }
     ],
     "submenus": [
@@ -119,6 +124,12 @@
           "command": "piAgentSidebar.addFilesToInput",
           "when": "resourceScheme == file || resourceScheme == vscode-remote",
           "group": "navigation@100"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "piAgentSidebar.open",
+          "group": "navigation@1"
         }
       ],
       "commandPalette": [

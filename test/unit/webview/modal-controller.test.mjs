@@ -334,7 +334,7 @@ test("Tab wraps focus within enabled modal controls", async () => {
 		const input = descendants(state.backdrop).find(
 			(element) => element.tagName === "INPUT",
 		);
-		const cancel = byText(state.backdrop, "Cancel");
+		const cancel = byText(state.backdrop, "取消");
 		const confirm = byText(state.backdrop, "Rename");
 		confirm.focus();
 		const forward = keyboardEvent("Tab");
