@@ -239,3 +239,36 @@ Icon row actions (lucide + zh-CN copy) under the bubble instead of inside it; re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: 轮次折叠的三处体验修正
+<!-- trellis-session: v=2 fp=6bd28d19965c61ec -->
+
+**Date**: 2026-11-06
+**Task**: 轮次折叠的三处体验修正
+**Branch**: `main`
+
+### Summary
+
+折叠入口在步骤间不再抖动；动作行只落在已完成的回答上；bash 步骤始终显示具体命令。
+
+### Main Changes
+
+- open 默认值改用 stopReason=toolUse 判断轮次仍在跑，不再依赖瞬时 streamingMessage
+- turnAnswers 只认已完成回答：流式消息与 toolUse 步骤都不挂动作行
+- 移除 bash 的运行命令标签，以及折叠时隐藏命令的 CSS 与渲染输出
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7987dfb` | fix(transcript): steady the turn handle and keep actions on the finished answer |
+
+### Testing
+
+- [OK] npm run verify：448 用例（445 pass / 3 skipped）+ 可复现构建
+- [OK] npm run package 后覆盖安装 1.0.3，产物无 tool-command-name
+
+### Status
+
+[OK] **Completed**
