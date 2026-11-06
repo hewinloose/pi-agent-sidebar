@@ -193,3 +193,16 @@ test("only the last message with prose carries the turn's actions", async (t) =>
  // The answer follows the step's remark, so CSS cancels the slot gap there.
  assert.deepEqual(rows.map((node) => node.afterStep), [false, true]);
 });
+
+test("an answer that follows the prompt keeps the transcript gap", async (t) => {
+ const { controller, state, children } = await transcriptHarness(t);
+ state.messages = [
+  message("user", "go", 1),
+  { role: "assistant", content: [{ type: "text", text: "the answer" }], timestamp: 2 },
+ ];
+ controller.render();
+ const answer = children.find((node) => node.message?.timestamp === 2);
+ assert.equal(answer.isAnswer, true);
+ // The prompt is not a step: cancelling the gap here would glue the answer to it.
+ assert.equal(answer.afterStep, false);
+});

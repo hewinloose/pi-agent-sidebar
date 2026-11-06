@@ -387,6 +387,9 @@ copyTextFor(messageKey: string): string | undefined {
   const gaps = new Set<string>();
   const lastByTurn = new Map<number, string>();
   for (const message of visible) {
+   // Only a preceding assistant step counts: the prompt opens the turn and must
+   // keep the transcript's gap to the answer it produced.
+   if (message.role !== "assistant") continue;
    const key = this.messageKey(message);
    const turnId = owners.ordinals.get(key) ?? owners.current;
    if (answerKeys.has(key) && lastByTurn.has(turnId)) gaps.add(key);

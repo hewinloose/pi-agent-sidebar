@@ -24,6 +24,10 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
 
  function patchStreamingMessage(slot: Element, message: PiMessage, resultMap: ReadonlyMap<string, PiMessage>, messageKey: string): Element | undefined {
   const controller = options.controller();
+  // Prose that arrives after an activity-only start changes which slot rules apply
+  // (`data-turn-empty` feeds the folded-turn CSS). A patch only swaps sections, so
+  // hand the slot back to be rebuilt with fresh attributes and action row.
+  if (slot instanceof HTMLElement && slot.dataset.turnEmpty !== (hasProse(message) ? "false" : "true")) return undefined;
   const sections = assistantMessageSections(message, resultMap, controller.liveTools, true, messageKey, true, controller.turnProcessFor(messageKey));
   const host = slot.querySelector(":scope > .message");
   if (!host || !host.classList.contains("assistant-message")) return undefined;
