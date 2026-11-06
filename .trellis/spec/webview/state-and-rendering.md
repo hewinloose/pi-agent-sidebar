@@ -158,12 +158,13 @@ history buttons are always in the DOM; the handler refuses them while pi is busy
 so a stream start never rebuilds a row.
 
 Reply actions belong to that answer and to nothing else: `turnAnswers()` marks
-the last assistant message with prose in each turn, and the renderer only emits
-`messageActionsHtml` for the marked message. A step whose prose is an
-acknowledgment (`Trellis SessionStart ✓`) keeps its text but gets no second row
-of Copy / Branch / Regenerate. Because the flag is part of the entry signature,
-a message that becomes the answer mid-stream is rebuilt instead of keeping the
-actions it had as a step.
+the last **finished** assistant message with prose in each turn — the message
+that is still streaming and a step that ended with `stopReason: "toolUse"` are
+both skipped — and the renderer only emits `messageActionsHtml` for the marked
+message. So the row appears when the answer lands, never on a step's remark
+(`Trellis SessionStart ✓`) and never as a lone Copy under a half-written answer.
+Because the flag is part of the entry signature, a message that becomes the
+answer is rebuilt instead of keeping the actions it had while streaming.
 The ordinal is computed by `TranscriptController.turnOwners()` over the whole
 snapshot — **not** the rendered window — and offset by
 `state.omittedPromptCount`, which the host supplies because a windowed snapshot
@@ -187,6 +188,9 @@ first *rendered* step with activity has `isHead: true`; `renderer.ts` emits the
   patch or a window slide must come back with the same state. `setTurnProcess()`
   writes the choice and syncs `data-turn-open` on all rendered slots of the turn.
 - Default: a turn that is still streaming is open, a settled one is closed. The
+- Default: a turn is open while a reply streams, or while its last step ended
+  with `stopReason: "toolUse"` (pi settles every step, so `streamingMessage` alone
+  made the handle flap on each step boundary). A settled answer closes it. The
   reader's toggle outranks both and survives the settle and later renders.
 - CSS folds by `data-turn-open="false"` (non-head timelines hidden, the head's
   items hidden but its button kept). Do not reintroduce a `.process-open` class:

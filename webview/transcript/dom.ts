@@ -158,7 +158,10 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
   const html = messageHtml(message, context.resultMap, controller.liveTools, isStreaming, entry.key, context.promptOrdinals.get(entry.key), turn, isAnswer);
   const node = document.createElement("div");
   node.className = "message-slot";
-  node.dataset.turnStep = isAnswer ? "false" : "true";
+  // A step is an intermediate message, not "anything that is not the answer": an
+  // answer still streaming keeps the document rhythm and only loses its actions.
+  const isStep = message.role === "assistant" && !isAnswer && message.stopReason === "toolUse";
+  node.dataset.turnStep = isStep ? "true" : "false";
   node.dataset.turnEmpty = hasProse(message) ? "false" : "true";
   node.dataset.turnHead = turn?.isHead ? "true" : "false";
   node.dataset.turnAfterStep = context.afterStepKeys.has(entry.key) ? "true" : "false";

@@ -631,17 +631,15 @@ test("the hash is content-derived and independent of the marker", async () => {
 	}
 });
 
-test("a closed bash box hides the command line it keeps for the open state", async () => {
+test("a closed bash box keeps showing the command it ran", async () => {
 	const css = await readFile("webview/styles/transcript.css", "utf8");
-	assert.match(
+	// No generic label stands in for the command, and the collapsed row never hides
+	// it: the reader can tell two shell steps apart without opening either.
+	assert.doesNotMatch(css, /tool-command-name/u);
+	assert.doesNotMatch(
 		css,
-		/\.tool-call\.expandable:not\(\.expanded\) \.tool-command \.header-text\s*\{\s*display: none;\s*\}/u,
-		"the collapsed row drops the command line",
-	);
-	assert.match(
-		css,
-		/\.tool-call\.expandable:not\(\.expanded\) \.tool-command-name\s*\{\s*display: inline;\s*\}/u,
-		"the collapsed row shows the label instead",
+		/\.tool-call\.expandable:not\(\.expanded\) \.tool-command \.header-text/u,
+		"the collapsed row must keep the command line",
 	);
 });
 

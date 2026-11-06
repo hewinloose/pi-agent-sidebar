@@ -8,9 +8,13 @@
 - Reasoning no longer has a second disclosure. Once it has text it is visible as
   soon as the turn is open; "思考过程" with the animated dots is only the
   still-empty state, so reading reasoning never needs a second click.
-- Copy / Branch / Regenerate now sit under the turn's answer only. A step whose
-  prose is just the SessionStart acknowledgment no longer sprouts its own action
-  row, and its one line no longer opens several blank rows before the answer.
+- Copy / Branch / Regenerate appear under the turn's answer once it has finished.
+  Neither a step's remark (`Trellis SessionStart ✓`) nor a half-written answer
+  carries the row any more, so nothing sits under a moving target while the agent
+  is still working.
+- A shell step shows the command it ran even while collapsed. The 运行命令 label
+  is gone: two bash steps are now told apart without opening either, and the
+  untruncated command still rides in `title`.
 - A folded turn now reads as one row: steps without prose no longer leave blank
   slots, and the answer that follows a step's remark keeps only its own half line.
   Selecting text in the answer and then clicking the process handle also works —

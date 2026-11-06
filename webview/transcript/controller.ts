@@ -294,19 +294,29 @@ copyTextFor(messageKey: string): string | undefined {
  }
 
  /**
-  * Marks each turn's answer: its last assistant message that carries prose.
+  * Marks each turn's answered message: its last assistant message that carries
+  * prose and has finished.
+  *
+  * "Finished" is what keeps the action row off a moving target. While a step is
+  * still being written it is `state.streamingMessage`; an intermediate step ends
+  * with `stopReason: "toolUse"`. Neither is an answer, so neither shows Copy /
+  * Branch / Regenerate — before this, the step that streamed the acknowledgment
+  * owned the row until the real answer started, and the answer itself owned a
+  * lone Copy while it was still streaming.
   *
   * Read over the rendered list so a step that is not on screen cannot claim the
-  * actions. A turn with no prose at all (tools only) marks nothing, which is the
-  * same reason a command row never sprouted Copy before.
+  * actions. A turn with no prose at all (tools only) marks nothing.
   */
  private turnAnswers(
   visible: readonly PiMessage[],
   owners: { ordinals: ReadonlyMap<string, number>; current: number },
  ): ReadonlySet<string> {
+  const { streamingMessage } = this.options.state;
   const last = new Map<number, string>();
   for (const message of visible) {
    if (message.role !== "assistant" || !hasAnswerText(message)) continue;
+   if (message === streamingMessage) continue;
+   if (message.stopReason === "toolUse") continue;
    const key = this.messageKey(message);
    last.set(owners.ordinals.get(key) ?? owners.current, key);
   }
@@ -330,6 +340,11 @@ copyTextFor(messageKey: string): string | undefined {
   const liveTurn = live ? owners.ordinals.get(this.messageKey(live)) ?? owners.current : undefined;
   const all = live && !state.messages.includes(live) ? [...state.messages, live] : state.messages;
   const stats = new Map<number, { tools: number; commandsOnly: boolean; thinkingRuns: number }>();
+  // A turn still working on its next step keeps its handle open. `streamingMessage`
+  // alone cannot say that: pi settles every step, so between two steps it is empty
+  // and the handle folded and reopened on each boundary. A step that ended with
+  // `stopReason: "toolUse"` is the durable signal that the turn has not answered yet.
+  const running = new Set<number>();
   for (const message of all) {
    if (message.role !== "assistant") continue;
    const turnId = owners.ordinals.get(this.messageKey(message)) ?? owners.current;
@@ -342,6 +357,8 @@ copyTextFor(messageKey: string): string | undefined {
     entry.commandsOnly = entry.commandsOnly && tools.every((block) => block.name === "bash");
    }
    stats.set(turnId, entry);
+   if (message.stopReason === "toolUse") running.add(turnId);
+   else running.delete(turnId);
   }
   const heads = new Map<number, string>();
   for (const message of visible) {
@@ -358,15 +375,15 @@ copyTextFor(messageKey: string): string | undefined {
    if (!entry || (entry.tools === 0 && entry.thinkingRuns === 0)) continue;
    result.set(key, {
     turnId,
-    label:
-     entry.tools === 0
-      ? `${entry.thinkingRuns} 个思考步骤`
-      : entry.commandsOnly
-       ? `${entry.tools} 个命令`
-       : `${entry.tools} 次工具操作`,
-    note: entry.tools > 0 && entry.thinkingRuns > 0 ? "含思考" : "",
-    isHead: heads.get(turnId) === key,
-    open: this.turnChoices.get(turnId) ?? turnId === liveTurn,
+   label:
+    entry.tools === 0
+     ? `${entry.thinkingRuns} 个思考步骤`
+     : entry.commandsOnly
+      ? `${entry.tools} 个命令`
+      : `${entry.tools} 次工具操作`,
+   note: entry.tools > 0 && entry.thinkingRuns > 0 ? "含思考" : "",
+   isHead: heads.get(turnId) === key,
+   open: this.turnChoices.get(turnId) ?? (turnId === liveTurn || running.has(turnId)),
    });
   }
   return result;

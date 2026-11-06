@@ -182,16 +182,40 @@ test("only the last message with prose carries the turn's actions", async (t) =>
    { type: "text", text: "Trellis SessionStart ✓" },
    { type: "toolCall", id: "a", name: "bash", arguments: { command: "ls" } },
   ],
+  stopReason: "toolUse",
   timestamp: 2,
  };
  const answer = { role: "assistant", content: [{ type: "text", text: "the answer" }], timestamp: 3 };
+ // The acknowledgment step alone: its prose must not turn it into an answer while
+ // the turn is still calling tools.
+ state.messages = [message("user", "go", 1), ackStep];
+ controller.render();
+ const alone = children.find((node) => node.message?.timestamp === 2);
+ assert.equal(alone.isAnswer, false);
+
  state.messages = [message("user", "go", 1), ackStep, answer];
  controller.render();
- const rows = children.filter((node) => node.message?.role === "assistant");
+ const rows = children.filter((node) => node.message?.role === "assistant" && node.message.timestamp !== undefined);
  // The acknowledgment step holds prose too, but the answer owns the actions.
- assert.deepEqual(rows.map((node) => node.isAnswer), [false, true]);
+ assert.equal(rows.find((node) => node.message.timestamp === 2).isAnswer, false);
+ assert.equal(rows.find((node) => node.message.timestamp === 3).isAnswer, true);
  // The answer follows the step's remark, so CSS cancels the slot gap there.
- assert.deepEqual(rows.map((node) => node.afterStep), [false, true]);
+ assert.equal(rows.find((node) => node.message.timestamp === 3).afterStep, true);
+});
+
+test("the answer gets its actions only once it has finished", async (t) => {
+ const { controller, state, children } = await transcriptHarness(t);
+ const answer = { role: "assistant", content: [{ type: "text", text: "partial" }], timestamp: 2 };
+ state.messages = [message("user", "go", 1)];
+ state.streamingMessage = answer;
+ controller.render();
+ const live = children.filter((node) => node.message?.timestamp === 2).at(-1);
+ // Still being written: no Copy / Branch / Regenerate on a moving target.
+ assert.equal(live.isAnswer, false);
+ controller.settle(answer);
+ controller.render();
+ const settled = children.filter((node) => node.message?.timestamp === 2).at(-1);
+ assert.equal(settled.isAnswer, true);
 });
 
 test("an answer that follows the prompt keeps the transcript gap", async (t) => {
@@ -205,4 +229,31 @@ test("an answer that follows the prompt keeps the transcript gap", async (t) => 
  assert.equal(answer.isAnswer, true);
  // The prompt is not a step: cancelling the gap here would glue the answer to it.
  assert.equal(answer.afterStep, false);
+});
+
+test("a turn stays open between steps and folds once the answer lands", async (t) => {
+ const { controller, state, children } = await transcriptHarness(t);
+ const toolStep = {
+  role: "assistant",
+  content: [{ type: "toolCall", id: "a", name: "bash", arguments: { command: "ls" } }],
+  stopReason: "toolUse",
+  timestamp: 2,
+ };
+ state.messages = [
+  message("user", "go", 1),
+  toolStep,
+  { role: "toolResult", toolCallId: "a", content: [{ type: "text", text: "ok" }], timestamp: 3 },
+ ];
+ controller.render();
+ const between = children.filter((node) => node.message?.role === "assistant").at(-1).turnProcess;
+ // pi settles every step, so there is no live message here — and the turn has not
+ // answered yet. Folding on that gap made the handle flap on every step boundary.
+ assert.equal(between.open, true);
+ state.messages = [
+  ...state.messages,
+  { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop", timestamp: 4 },
+ ];
+ controller.render();
+ const settled = children.filter((node) => node.message?.role === "assistant").at(-1).turnProcess;
+ assert.equal(settled.open, false);
 });

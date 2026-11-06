@@ -802,10 +802,10 @@ test("a closed bash box names the step instead of quoting the command", async ()
 			false,
 			"message-8",
 		);
-		// The command stays in the DOM (the open state prints it, and `title` answers
-		// a hover), but the closed row shows the label: a transcript that repeats
-		// every pipeline the agent ran is unreadable.
-		assert.match(html, /<span class="tool-command-name">运行命令<\/span>/u);
+		// Closed or open, the row shows the command it ran; there is no generic
+		// label to expand away from.
+		assert.match(html, /<span class="header-text">\$ env \| grep -i/u);
+		assert.doesNotMatch(html, /tool-command-name/u);
 		assert.match(html, /data-tool-body="lazy"/u);
 	} finally {
 		await loaded.dispose();

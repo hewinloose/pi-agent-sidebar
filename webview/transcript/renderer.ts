@@ -987,13 +987,13 @@ function toolHeaderParts(
 	if (name === "bash") {
 		const command = stringValue(args.command);
 		const preview = `$ ${truncate(command, MAX_TOOL_TARGET_LENGTH)}`;
-		// The command is quoted only while the box is open. Closed, the row says
-		// what the step was, never the pipeline it ran: a working agent shells out
-		// constantly, and a transcript that repeats every one of those pipelines is
-		// unreadable. `title` still holds the command, so a hover answers "which
-		// one was this" without opening anything.
+		// The command is the row's whole identity, open or closed: a working agent
+		// shells out constantly, and hiding which pipeline ran behind a generic
+		// label left the reader opening every box to tell them apart. The line
+		// clips at the column edge like any other header; `title` keeps the
+		// untruncated command for a hover.
 		return {
-			html: `<div class="tool-command"><span class="tool-command-name">运行命令</span><span class="header-text">${escapeHtml(preview)}</span><span class="header-trail">${trail}</span></div>`,
+			html: `<div class="tool-command"><span class="header-text">${escapeHtml(preview)}</span><span class="header-trail">${trail}</span></div>`,
 			title: `$ ${command}`,
 		};
 	}

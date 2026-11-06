@@ -1298,20 +1298,6 @@
 	white-space: nowrap;
 }
 
-/* A closed bash box says "运行命令", not the pipeline it ran: the command is
-   quoted once the reader opens the box, and `title` answers a hover in the
-   meantime. The label is inline so it inherits the row's ellipsis behaviour. */
-.tool-command-name {
-	display: none;
-}
-
-.tool-call.expandable:not(.expanded) .tool-command-name {
-	display: inline;
-}
-
-.tool-call.expandable:not(.expanded) .tool-command .header-text {
-	display: none;
-}
 
 /* `min-width: 0` is load-bearing: a flex item will not shrink past its
    min-content width without it, and an overflowing box draws no ellipsis. */
