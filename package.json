@@ -8,11 +8,11 @@
   "author": "Liu Ze",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dairycode/pi-agent-sidebar.git"
+    "url": "https://github.com/hewinloose/pi-agent-sidebar.git"
   },
-  "homepage": "https://github.com/dairycode/pi-agent-sidebar#readme",
+  "homepage": "https://github.com/hewinloose/pi-agent-sidebar#readme",
   "bugs": {
-    "url": "https://github.com/dairycode/pi-agent-sidebar/issues"
+    "url": "https://github.com/hewinloose/pi-agent-sidebar/issues"
   },
   "engines": {
     "vscode": "^1.129.0"

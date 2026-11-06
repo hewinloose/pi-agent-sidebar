@@ -1,6 +1,6 @@
 # Pi Agent for VS Code
 
-[English](https://github.com/dairycode/pi-agent-sidebar/blob/main/README.md) · [简体中文](https://github.com/dairycode/pi-agent-sidebar/blob/main/README.zh-CN.md)
+[English](https://github.com/hewinloose/pi-agent-sidebar/blob/main/README.md) · [简体中文](https://github.com/hewinloose/pi-agent-sidebar/blob/main/README.zh-CN.md)
 
 A VS Code auxiliary-sidebar client for [pi](https://pi.dev), built on pi's public
 RPC protocol.
@@ -10,7 +10,7 @@ mode, in the extension host, and renders what pi reports. Conversation state,
 tools, diffs, sessions, and slash commands are all pi's. The sidebar is the only
 thing this extension adds.
 
-Source: <https://github.com/dairycode/pi-agent-sidebar>
+Source: <https://github.com/hewinloose/pi-agent-sidebar>
 
 ## Preview
 
@@ -110,7 +110,7 @@ pi
 | Pi Agent: Show Logs | Open the extension's output channel |
 
 > Command Palette labels currently ship in Simplified Chinese (see
-> [README.zh-CN.md](https://github.com/dairycode/pi-agent-sidebar/blob/main/README.zh-CN.md) for the Chinese label of each entry).
+> [README.zh-CN.md](https://github.com/hewinloose/pi-agent-sidebar/blob/main/README.zh-CN.md) for the Chinese label of each entry).
 
 ## Keyboard shortcut
 
@@ -202,9 +202,9 @@ scripts/    build, preview, and smoke-test entry points
 test/       unit and integration suites (node:test)
 ```
 
-See [CONTRIBUTING.md](https://github.com/dairycode/pi-agent-sidebar/blob/main/CONTRIBUTING.md) for review expectations and commit
+See [CONTRIBUTING.md](https://github.com/hewinloose/pi-agent-sidebar/blob/main/CONTRIBUTING.md) for review expectations and commit
 conventions.
 
 ## License
 
-[MIT](https://github.com/dairycode/pi-agent-sidebar/blob/main/LICENSE)
+[MIT](https://github.com/hewinloose/pi-agent-sidebar/blob/main/LICENSE)

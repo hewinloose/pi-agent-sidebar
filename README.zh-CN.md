@@ -1,12 +1,12 @@
 # Pi Agent for VS Code
 
-[English](https://github.com/dairycode/pi-agent-sidebar/blob/main/README.md) · [简体中文](https://github.com/dairycode/pi-agent-sidebar/blob/main/README.zh-CN.md)
+[English](https://github.com/hewinloose/pi-agent-sidebar/blob/main/README.md) · [简体中文](https://github.com/hewinloose/pi-agent-sidebar/blob/main/README.zh-CN.md)
 
 一个把 [pi](https://pi.dev) 放进 VS Code 辅助侧边栏的客户端，建立在 pi 的公开 RPC 协议之上。
 
 这个扩展刻意做得很薄：它在扩展宿主里以 RPC 模式启动你自己已经装好的 `pi`，然后渲染 pi 报告的一切。会话状态、工具、diff、历史记录、斜杠命令都属于 pi，扩展只负责侧边栏这一层。
 
-源码：<https://github.com/dairycode/pi-agent-sidebar>
+源码：<https://github.com/hewinloose/pi-agent-sidebar>
 
 ## 预览
 
@@ -145,8 +145,8 @@ scripts/    构建、预览、冒烟测试入口
 test/       单元与集成测试（node:test）
 ```
 
-提交与评审约定见 [CONTRIBUTING.md](https://github.com/dairycode/pi-agent-sidebar/blob/main/CONTRIBUTING.md)。
+提交与评审约定见 [CONTRIBUTING.md](https://github.com/hewinloose/pi-agent-sidebar/blob/main/CONTRIBUTING.md)。
 
 ## 许可证
 
-[MIT](https://github.com/dairycode/pi-agent-sidebar/blob/main/LICENSE)
+[MIT](https://github.com/hewinloose/pi-agent-sidebar/blob/main/LICENSE)
