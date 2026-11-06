@@ -16,7 +16,7 @@ run concurrently with a session mutation or a runtime restart.
 ## 1. Activation is thin
 
 [src/extension.ts](../../../src/extension.ts) is the only place that registers
-commands, creates the output channel and status bar, and it delegates:
+commands, creates the output channel, and it delegates:
 
 - Command handlers are one-liners that call a `PiViewProvider` method.
 - Every registration is pushed into **one** `context.subscriptions` call.
@@ -38,9 +38,8 @@ provider (see [architecture/layer-boundaries.md](../architecture/layer-boundarie
   The router itself holds no state.
 - All outbound Webview traffic goes through the single private
   `post(message: HostToWebviewMessage)` method
-  ([piViewProvider.ts:1717](../../../src/provider/piViewProvider.ts)), which also
-  updates the status bar and drops messages when the view is hidden. Nothing else
-  may call `webview.postMessage`.
+  ([piViewProvider.ts:1988](../../../src/provider/piViewProvider.ts)), which drops
+  messages when the view is hidden. Nothing else may call `webview.postMessage`.
 - Actions carrying an `actionId` go through `respondToAction`, which always posts
   back `{ type: "actionResult", actionId, ok, cancelled?, error? }`.
 

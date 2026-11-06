@@ -21,7 +21,7 @@
 
 ```
 src/
-├── extension.ts            activation: commands, status bar, output channel, deactivate
+├── extension.ts            activation: commands, output channel, deactivate
 ├── webviewDocument.ts      the only HTML/CSP factory for the Webview
 ├── provider/               UI orchestration and provider operations
 │   ├── piViewProvider.ts   WebviewViewProvider; owns runtime, snapshot, and message flow

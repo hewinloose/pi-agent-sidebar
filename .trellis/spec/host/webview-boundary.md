@@ -8,8 +8,9 @@
 
 ## When this applies
 
-Any change to Webview → host messages, host → Webview messages, status bar
-updates, or what the provider does when the view is hidden or disposed.
+Any change to Webview → host messages, host → Webview messages, the runtime
+phase the view renders, or what the provider does when the view is hidden or
+disposed.
 
 ---
 
@@ -34,9 +35,9 @@ updates, or what the provider does when the view is hidden or disposed.
 
 - Every host → Webview message goes through
   `private async post(message: HostToWebviewMessage): Promise<boolean>`
-  ([piViewProvider.ts:1717](../../../src/provider/piViewProvider.ts)). It handles
-  the hidden-view case, returns whether the message was delivered, and updates the
-  status bar. **Nothing else may call `webview.postMessage`.**
+  ([piViewProvider.ts:1988](../../../src/provider/piViewProvider.ts)). It handles
+  the hidden-view case and returns whether the message was delivered.
+  **Nothing else may call `webview.postMessage`.**
 
   The type is `Promise<boolean>`, so callers can tell a drop from a delivery; do
   not change it to `void` without checking every call site.
@@ -44,12 +45,12 @@ updates, or what the provider does when the view is hidden or disposed.
   next reveal resyncs) and queues replies the Webview cannot ask for again
   through `missedReplies` / `isReplayableReply`, bounded by `MAX_MISSED_REPLIES`
   (32). Overflow is logged, not thrown. Do not bypass this by posting directly.
-- `post()` also drives the chat view's title-bar item from message type:
-  `connection` (phase), `bootstrap` with `phase: "no-workspace"`, and `snapshot`
-  (ready). The item is created with `createStatusBarItem(viewId, …)`, so it is
-  shown in that view's title bar and nowhere else. The window status bar must not
-  carry the runtime phase: it outlives the sidebar and then reports a runtime
-  nobody is talking to.
+- `post()` does not touch any status-bar item. `createStatusBarItem(id, …)` only
+  requires an id unique to the extension — an id equal to the view id does **not**
+  put the item in the view title bar, it lands in the window status bar and
+  outlives the sidebar it describes. The runtime phase is rendered in the Webview
+  header ([headerRenderer.ts](../../../webview/ui/headerRenderer.ts)) instead, so no
+  window-level phase entry may come back.
 - Message ordering matters: a full snapshot must not be interleaved with deltas.
   Reuse the existing post path rather than adding an independent pump.
 - Replies that arrive after the view is disposed are dropped by the runtime, not
@@ -83,8 +84,8 @@ the Webview can decide from data it already has.
 
 - The view-scoped `onDidDispose` disposes the message listener, the visibility
   listener, and itself.
-- Visibility changes stop/start expensive work (status bar, queue flushing); they
-  must not restart the pi runtime.
+- Visibility changes stop/start expensive work (queue flushing); they must not
+  restart the pi runtime.
 - After a runtime restart, the provider re-posts a fresh snapshot instead of
   patching the old one. The Webview's `SessionController` adopts identity before
   swapping arrays (see [webview/state-and-rendering.md](../webview/state-and-rendering.md)).
@@ -103,7 +104,7 @@ the Webview can decide from data it already has.
 | Anti-pattern | Why |
 |--------------|-----|
 | A second `webview.onDidReceiveMessage` | Bypasses the parser and the `assertNever` dispatch |
-| `webview.postMessage(...)` called directly | Skips the hidden-view guard and status-bar update |
+| `webview.postMessage(...)` called directly | Skips the hidden-view guard and the missed-reply bookkeeping |
 | Answering an `actionId` message twice, or not at all | Double-handles or hangs the renderer's pending action |
 | Validating pi events strictly in the Webview | Breaks forward compatibility with new pi releases |
 | Putting transient UI state on the host | Duplicates ownership; the Webview already owns it |
