@@ -120,44 +120,16 @@ test("assistant transcript preserves activity ordering and stream state", async 
 			new Map(),
 			true,
 			"message-7",
-			// Opened explicitly: this assertion is about the body reaching the page.
-			() => true,
 		);
 
 		assert.match(html, /class="message assistant-message"/u);
-		// An opened block keeps its body in the DOM, so a reasoning wall is parsed
-		// once and the reader can follow it while it streams.
-		assert.match(
-			html,
-			/thinking-block streaming is-expanded" data-thinking-key="message-7-thinking-0" data-expandable="thinking"/u,
-		);
+		// Reasoning is content now: it reaches the page as soon as it has text, so
+		// reading it never needs a second disclosure.
+		assert.match(html, /class="activity-item thinking-block streaming" data-thinking-key="message-7-thinking-0"/u);
+		assert.doesNotMatch(html, /data-expandable="thinking"/u);
 		assert.match(html, /checking/u);
 		assert.match(html, /partial failure/u);
 		assert.match(html, /Cancelled/u);
-
-		// A block the reader closed keeps its body out of the DOM, so collapsing
-		// a long reasoning wall never pays the parse.
-		const collapsed = loaded.module.messageHtml(
-			{
-				role: "assistant",
-				content: [
-					{ type: "thinking", thinking: "checking" },
-					{ type: "text", text: "answer" },
-				],
-				stopReason: "aborted",
-				errorMessage: "partial failure",
-			},
-			new Map(),
-			new Map(),
-			true,
-			"message-7",
-			() => false,
-		);
-		assert.match(
-			collapsed,
-			/thinking-block streaming" data-thinking-key="message-7-thinking-0" data-expandable="thinking"/u,
-		);
-		assert.doesNotMatch(collapsed, /is-expanded|checking/u);
 	} finally {
 		await loaded.dispose();
 	}
@@ -175,33 +147,11 @@ test("adjacent reasoning parts render as one section", async () => {
 				{ type: "text", text: "answer" },
 			],
 		};
-		const collapsed = loaded.module.messageHtml(
-			message,
-			new Map(),
-			new Map(),
-			false,
-			"message-9",
-			() => false,
-		);
-		assert.equal(
-			collapsed.match(/data-expandable="thinking"/gu).length,
-			1,
-			"two parts must not stack two collapsed rows",
-		);
-		assert.match(collapsed, /data-thinking-key="message-9-thinking-0"/u);
-		assert.doesNotMatch(collapsed, /first part|second part/u);
-
-		// One disclosure covers the whole run, and its parts keep their order.
-		const expanded = loaded.module.messageHtml(
-			message,
-			new Map(),
-			new Map(),
-			false,
-			"message-9",
-			() => true,
-		);
-		assert.match(expanded, /aria-expanded="true"/u);
-		assert.ok(expanded.indexOf("first part") < expanded.indexOf("second part"));
+		const html = loaded.module.messageHtml(message, new Map(), new Map(), false, "message-9");
+		// One section covers the whole run, and its parts keep their order.
+		assert.equal(html.match(/data-thinking-key=/gu).length, 1);
+		assert.match(html, /data-thinking-key="message-9-thinking-0"/u);
+		assert.ok(html.indexOf("first part") < html.indexOf("second part"));
 	} finally {
 		await loaded.dispose();
 	}
@@ -224,7 +174,7 @@ test("prose between reasoning parts keeps them apart", async () => {
 			false,
 			"message-9",
 		);
-		assert.equal(html.match(/data-expandable="thinking"/gu).length, 2);
+		assert.equal(html.match(/data-thinking-key=/gu).length, 2);
 		assert.match(html, /data-thinking-key="message-9-thinking-1"/u);
 	} finally {
 		await loaded.dispose();
@@ -721,7 +671,7 @@ test("a row carries its history actions only when its prompt is addressable", as
 	const loaded = await loadTranscript();
 	try {
 		const user = { role: "user", content: [{ type: "text", text: "hello" }] };
-		const withOrdinal = loaded.module.messageHtml(user, new Map(), new Map(), false, "message-0", undefined, 3);
+		const withOrdinal = loaded.module.messageHtml(user, new Map(), new Map(), false, "message-0", 3);
 		assert.match(withOrdinal, /data-message-action="edit"/u);
 		assert.match(withOrdinal, /data-message-action="delete"/u);
 		assert.match(withOrdinal, /data-prompt-ordinal="3"/u);
@@ -743,7 +693,7 @@ test("a row carries its history actions only when its prompt is addressable", as
 		assert.equal(withoutOrdinal.includes("data-message-action"), false);
 
 		const reply = { role: "assistant", content: [{ type: "text", text: "answer" }] };
-		const replyHtml = loaded.module.messageHtml(reply, new Map(), new Map(), false, "message-1", undefined, 3);
+		const replyHtml = loaded.module.messageHtml(reply, new Map(), new Map(), false, "message-1", 3);
 		// PI-Desktop's order on a reply: read it, branch it, re-run it.
 		assert.match(replyHtml, /data-message-action="copy"/u);
 		assert.match(replyHtml, /data-message-action="fork"/u);
@@ -776,7 +726,7 @@ test("a row carries its history actions only when its prompt is addressable", as
 	}
 });
 
-test("reasoning is hidden by default, command text included", async () => {
+test("reasoning renders as soon as it has text, command text included", async () => {
 	const loaded = await loadTranscript();
 	try {
 		const command = "cd d:/code/pi-agent-sidebar && cat .trellis/.current-task";
@@ -787,17 +737,12 @@ test("reasoning is hidden by default, command text included", async () => {
 				{ type: "text", text: "answer" },
 			],
 		};
-		// No resolver is the real path: the controller answers "collapsed" unless the
-		// reader opened this block, so nothing of the reasoning reaches the DOM — not
-		// the prose, not the shell command it quoted.
-		const hidden = loaded.module.messageHtml(message, new Map(), new Map(), false, "message-9");
-		assert.equal(hidden.includes("current-task"), false);
-		assert.equal(hidden.includes("Check the task"), false);
-		assert.match(hidden, /aria-expanded="false"/u);
-		assert.match(hidden, /thinking-collapsed/u);
-
-		const opened = loaded.module.messageHtml(message, new Map(), new Map(), false, "message-9", () => true);
-		assert.equal(opened.includes("current-task"), true);
+		const html = loaded.module.messageHtml(message, new Map(), new Map(), false, "message-9");
+		// The turn's handle is the only fold, so the reasoning body is in the page
+		// without a second click; the placeholder is only for an empty section.
+		assert.equal(html.includes("current-task"), true);
+		assert.equal(html.includes("Check the task"), true);
+		assert.doesNotMatch(html, /thinking-collapsed/u);
 	} finally {
 		await loaded.dispose();
 	}
@@ -814,7 +759,7 @@ test("a step that only ran a tool carries no reply actions", async () => {
 		};
 		// Regenerate and fork belong to an answer, never to the step that produced it:
 		// hanging them under a shell command reads as if the command were the reply.
-		const stepHtml = loaded.module.messageHtml(step, new Map(), new Map(), false, "message-4", undefined, 2);
+		const stepHtml = loaded.module.messageHtml(step, new Map(), new Map(), false, "message-4", 2);
 		assert.equal(stepHtml.includes("data-message-action"), false);
 
 		const answered = loaded.module.messageHtml(
@@ -829,7 +774,6 @@ test("a step that only ran a tool carries no reply actions", async () => {
 			new Map(),
 			false,
 			"message-5",
-			undefined,
 			2,
 		);
 		assert.match(answered, /data-message-action="regenerate"/u);
@@ -868,7 +812,7 @@ test("a closed bash box names the step instead of quoting the command", async ()
 	}
 });
 
-test("a message folds its whole activity into one process handle", async () => {
+test("a turn folds its whole activity into one process handle", async () => {
 	const loaded = await loadTranscript();
 	try {
 		const html = loaded.module.messageHtml(
@@ -885,18 +829,42 @@ test("a message folds its whole activity into one process handle", async () => {
 			new Map(),
 			false,
 			"message-6",
+			undefined,
+			{ label: "3 个命令", note: "含思考", isHead: true },
 		);
-		// One handle for the message, not one per run: prose sitting between two tool
+		// One handle for the turn, not one per run: prose sitting between two tool
 		// calls must not split the process in two.
 		assert.equal((html.match(/<button type="button" class="activity-process"/gu) ?? []).length, 1);
 		assert.equal((html.match(/data-process-head="true"/gu) ?? []).length, 1);
-		// Labelled the way PI-Desktop labels its process group.
-		assert.match(html, /<span class="activity-process-label">2 次工具操作<\/span>/u);
+		// The label is the turn's own count, not this step's.
+		assert.match(html, /<span class="activity-process-label">3 个命令<\/span>/u);
 		assert.match(html, /<span class="activity-process-note">含思考<\/span>/u);
 		assert.match(html, /data-glyph="sparkles"/u);
 		assert.match(html, /data-glyph="chevron"/u);
-		// Closed by default, so the slot itself carries no open state.
+		// No slot-level open state: the turn owns it.
 		assert.equal(html.includes("process-open"), false);
+	} finally {
+		await loaded.dispose();
+	}
+});
+
+test("a step that is not the turn's head renders no handle of its own", async () => {
+	const loaded = await loadTranscript();
+	try {
+		const html = loaded.module.messageHtml(
+			{
+				role: "assistant",
+				content: [{ type: "toolCall", id: "call-2", name: "read", arguments: { path: "src/a.ts" } }],
+			},
+			new Map(),
+			new Map(),
+			false,
+			"message-7",
+			undefined,
+			{ label: "3 个命令", note: "含思考", isHead: false },
+		);
+		assert.equal(html.includes("activity-process"), false);
+		assert.match(html, /class="activity-timeline tool-activity"/u);
 	} finally {
 		await loaded.dispose();
 	}

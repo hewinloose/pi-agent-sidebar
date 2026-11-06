@@ -156,9 +156,34 @@ answer text. Copy therefore needs no ordinal — it stays available on a row who
 opening prompt fell outside the window, and while a turn is running. The four
 history buttons are always in the DOM; the handler refuses them while pi is busy,
 so a stream start never rebuilds a row.
-The ordinal is computed by `TranscriptController.promptOrdinals()` over the whole
+The ordinal is computed by `TranscriptController.turnOwners()` over the whole
 snapshot — **not** the rendered window — and offset by
 `state.omittedPromptCount`, which the host supplies because a windowed snapshot
 drops prompts the Webview cannot count. The host re-checks the prompt text before
 acting, so a stale ordinal fails closed instead of taking out a neighbouring
 turn. See [host/session-history.md](../host/session-history.md).
+
+## 10. Process folding is per turn
+
+A turn — one prompt and every assistant step it produced — carries exactly one
+process handle, and the handle belongs to that turn, not to a message. The
+controller derives the turn from the prompt ordinal
+(`TranscriptController.turnOwners()`), counts the turn's tools and reasoning over
+`state.messages` rather than the rendered window (`turnProcess()`), and puts the
+result in `MessageRenderContext.turnProcess` keyed by message. Only the turn's
+first *rendered* step with activity has `isHead: true`; `renderer.ts` emits the
+`.activity-process` button for that step alone.
+
+- The open state lives in the controller (`Map<turnId, boolean>`), never on a
+  slot: a turn is many `.message-slot`s, and every one rebuilt by a streaming
+  patch or a window slide must come back with the same state. `setTurnProcess()`
+  writes the choice and syncs `data-turn-open` on all rendered slots of the turn.
+- Default: a turn that is still streaming is open, a settled one is closed. The
+  reader's toggle outranks both and survives the settle and later renders.
+- CSS folds by `data-turn-open="false"` (non-head timelines hidden, the head's
+  items hidden but its button kept). Do not reintroduce a `.process-open` class:
+  the slot-level flag was what made a nine-step turn leave nine rows.
+- Reasoning has no disclosure of its own. `thinkingBlockHtml` renders
+  `.thinking-text` as soon as a section has text; `思考过程` plus the animated
+  dots is only the still-empty state. PI-Desktop does the same — its `showThinking`
+  preference never controls turn-process folding.

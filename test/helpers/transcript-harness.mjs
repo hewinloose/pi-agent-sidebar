@@ -16,6 +16,7 @@ export async function transcriptHarness(t) {
    children.splice(index < 0 ? children.length : index, 0, node);
   },
   removeChild(node) { const index = children.indexOf(node); if (index >= 0) children.splice(index, 1); },
+  querySelectorAll() { return []; },
  };
  const controller = new loaded.module.TranscriptController({
   state, container,
@@ -24,8 +25,9 @@ export async function transcriptHarness(t) {
     ...entry,
     message: context.byKey.get(entry.key),
     omitted: context.omitted,
-    promptOrdinal: context.promptOrdinals.get(entry.key),
-   };
+   promptOrdinal: context.promptOrdinals.get(entry.key),
+   turnProcess: context.turnProcess.get(entry.key),
+  };
    builds.push(node);
    return node;
   },

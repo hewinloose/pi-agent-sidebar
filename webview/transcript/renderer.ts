@@ -194,8 +194,12 @@ export function messageHtml(
 	liveTools: ReadonlyMap<string, TranscriptLiveTool>,
 	streaming: boolean,
 	messageKey: string,
-	isThinkingExpanded?: (thinkingKey: string) => boolean,
 	promptOrdinal?: number,
+	turnProcess?: {
+		readonly label: string;
+		readonly note: string;
+		readonly isHead: boolean;
+	},
 ): string {
 	if (message.role === "toolResult") return "";
 	if (message.role === "user") return userMessageHtml(message, promptOrdinal);
@@ -206,7 +210,7 @@ export function messageHtml(
 			liveTools,
 			streaming,
 			messageKey,
-			isThinkingExpanded,
+			turnProcess,
 			promptOrdinal,
 		);
 	}
@@ -484,7 +488,11 @@ function assistantMessageHtml(
 	liveTools: ReadonlyMap<string, TranscriptLiveTool>,
 	streaming: boolean,
 	messageKey: string,
-	isThinkingExpanded?: (thinkingKey: string) => boolean,
+	turnProcess?: {
+		readonly label: string;
+		readonly note: string;
+		readonly isHead: boolean;
+	},
 	promptOrdinal?: number,
 ): string {
 	const sections = assistantMessageSections(
@@ -494,7 +502,7 @@ function assistantMessageHtml(
 		streaming,
 		messageKey,
 		false,
-		isThinkingExpanded,
+		turnProcess,
 	);
 	// The row belongs to the answer, not to the work that led to it: a message
 	// holding only reasoning or a tool call is a step, and hanging Copy or
@@ -548,7 +556,11 @@ export function assistantMessageSections(
 	streaming: boolean,
 	messageKey: string,
 	deferStreamingTextHtml = false,
-	isThinkingExpanded?: (thinkingKey: string) => boolean,
+	turnProcess?: {
+		readonly label: string;
+		readonly note: string;
+		readonly isHead: boolean;
+	},
 ): AssistantMessageSection[] {
 	const blocks = Array.isArray(message.content) ? message.content : [];
 	// Some models report reasoning as a series of parts, one `thinking` block
@@ -559,17 +571,21 @@ export function assistantMessageSections(
 	for (const group of thinkingRuns) {
 		thinkingGroupsByStart.set(group.startIndex, group);
 	}
-	// One handle stands in for the whole message, labelled the way PI-Desktop
-	// labels its process group: the run's own shape rather than a bare word.
+	// One handle stands in for the whole turn, labelled the way PI-Desktop labels
+	// its process group: the turn's own shape rather than a bare word. A direct
+	// render without turn context falls back to this message's own counts.
 	const toolBlocks = blocks.filter((block) => block.type === "toolCall" && block.id && block.name);
 	const allCommands = toolBlocks.length > 0 && toolBlocks.every((block) => block.name === "bash");
-	const processLabel =
+	const messageLabel =
 		toolBlocks.length === 0
 			? `${thinkingRuns.length} 个思考步骤`
 			: allCommands
 				? `${toolBlocks.length} 个命令`
 				: `${toolBlocks.length} 次工具操作`;
-	const processNote = thinkingRuns.length > 0 && toolBlocks.length > 0 ? "含思考" : "";
+	const processLabel = turnProcess?.label ?? messageLabel;
+	const processNote =
+		turnProcess?.note ?? (thinkingRuns.length > 0 && toolBlocks.length > 0 ? "含思考" : "");
+	const isTurnHead = turnProcess?.isHead ?? true;
 	const processHeadHtml =
 		'<button type="button" class="activity-process" data-expandable="process" aria-expanded="false">' +
 		'<span class="activity-process-icon" data-glyph="sparkles" aria-hidden="true"></span>' +
@@ -591,7 +607,7 @@ export function assistantMessageSections(
 		isFollowedByText = false,
 		isActiveThinking = false,
 	): void => {
-		const isHead = !processHeadDone;
+		const isHead = isTurnHead && !processHeadDone;
 		processHeadDone = true;
 		const key = `activity-${activityOrdinal}`;
 		const relationshipClass = isFollowedByText ? " thinking-before-text" : "";
@@ -671,13 +687,13 @@ export function assistantMessageSections(
 			if (!group) continue;
 			const thinkingKey = `${messageKey}-thinking-${thinkingIndex}`;
 			const streamingState = streaming ? " streaming" : "";
-		// Hidden unless the controller says the reader opened this one.
-		const expanded = isThinkingExpanded ? isThinkingExpanded(thinkingKey) : false;
-			const rawThinking = expanded ? group.text : "";
-			const streamText = streaming && expanded ? rawThinking : undefined;
-			const omitThinkingText = Boolean(
-				deferStreamingTextHtml && streamText !== undefined,
-			);
+			// Reasoning is content, not a disclosure: the turn's process handle is the
+			// only thing that folds. A section still filling in shows its placeholder
+			// until it has text, which is the only sign the model is still thinking.
+			const hasText = group.text.trim().length > 0;
+			const rawThinking = hasText ? group.text : "";
+			const streamText = streaming && hasText ? rawThinking : undefined;
+			const omitThinkingText = Boolean(deferStreamingTextHtml && streamText !== undefined);
 			const nextVisibleBlock = blocks
 				.slice(group.endIndex)
 				.find(
@@ -685,7 +701,7 @@ export function assistantMessageSections(
 						candidate.type !== "text" ||
 						(candidate.text ?? "").trim().length > 0,
 				);
-			const isActiveThinking = streaming && !expanded && !nextVisibleBlock;
+			const isActiveThinking = streaming && !hasText && !nextVisibleBlock;
 			thinkingIndex += group.blocks.length;
 			pushActivity(
 				"thinking",
@@ -693,19 +709,13 @@ export function assistantMessageSections(
 					.map(objectIdentity)
 					.join(
 						".",
-					)}:${streamingState}:${expanded ? 1 : 0}:active:${isActiveThinking ? 1 : 0}:omit:${omitThinkingText ? 1 : 0}`,
-				() =>
-					thinkingBlockHtml(
-						thinkingKey,
-						streamingState,
-						omitThinkingText ? "" : rawThinking,
-						expanded,
-					),
+					)}:${streamingState}:text${hasText ? 1 : 0}:active:${isActiveThinking ? 1 : 0}:omit:${omitThinkingText ? 1 : 0}`,
+				() => thinkingBlockHtml(thinkingKey, streamingState, omitThinkingText ? "" : rawThinking),
 				streamText,
 				nextVisibleBlock?.type === "text",
 				isActiveThinking,
 			);
-		}
+  }
 		if (block.type === "toolCall" && block.id && block.name) {
 			const result = results.get(block.id);
 			const live = liveTools.get(block.id);
@@ -815,15 +825,13 @@ function contentHash(value: string): string {
 }
 
 /**
- * Reasoning, rendered the way pi renders it: italic `thinkingText` with a
- * collapsed placeholder swapped in for it.
+ * Reasoning as content, not a control.
  *
- * Collapsed unless the reader explicitly expands it — the visible state is
- * reader-driven and survives settling, so it never collapses on its own. While
- * streaming, the block is still its own control: expanding it shows the live
- * reasoning (the stream patcher fills `.thinking-text`), collapsing it again
- * stops that per-frame work entirely. A collapsed block carries no body, so a
- * long settle costs nothing until the reader asks to see it.
+ * The turn's process handle is the only fold. A second disclosure around each
+ * run of reasoning made the reader open the process and then open the reasoning
+ * inside it; PI-Desktop has no block-level fold for the same reason. A section
+ * with no text yet keeps the placeholder, because that is the only sign the
+ * model is still thinking.
  *
  * `rawText` is the whole section's reasoning, which is more than one of pi's
  * blocks whenever a run of them is drawn together (`thinkingGroups`).
@@ -832,13 +840,12 @@ function thinkingBlockHtml(
 	thinkingKey: string,
 	streamingState: string,
 	rawText: string,
-	expanded: boolean,
 ): string {
-	const expandedClass = expanded ? " is-expanded" : "";
-	const body = expanded
-		? `<div class="thinking-text">${markdown(rawText)}</div>`
-		: `<div class="thinking-text"></div>`;
-	return `<div class="activity-item thinking-block${streamingState}${expandedClass}" data-thinking-key="${escapeHtml(thinkingKey)}" data-expandable="thinking" role="button" tabindex="0" aria-expanded="${expanded ? "true" : "false"}" aria-label="推理过程，点击${expanded ? "收起" : "展开"}">${body}<div class="thinking-collapsed"><span class="thinking-label">思考过程</span><span class="thinking-dots" aria-hidden="true"><span class="thinking-dot-one">.</span><span class="thinking-dot-two">.</span><span class="thinking-dot-three">.</span></span></div></div>`;
+	const body =
+		rawText.trim().length > 0
+			? `<div class="thinking-text">${markdown(rawText)}</div>`
+			: '<div class="thinking-collapsed"><span class="thinking-label">思考过程</span><span class="thinking-dots" aria-hidden="true"><span class="thinking-dot-one">.</span><span class="thinking-dot-two">.</span><span class="thinking-dot-three">.</span></span></div>';
+	return `<div class="activity-item thinking-block${streamingState}" data-thinking-key="${escapeHtml(thinkingKey)}">${body}</div>`;
 }
 
 /**

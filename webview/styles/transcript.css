@@ -908,15 +908,15 @@
 	transition: transform 120ms ease;
 }
 
-.message-slot.process-open .activity-process-caret {
+.message-slot[data-turn-open="true"] .activity-process-caret {
 	transform: rotate(90deg);
 }
 
-.message-slot:not(.process-open) .activity-timeline[data-process]:not([data-process-head]) {
+.message-slot[data-turn-open="false"] .activity-timeline[data-process]:not([data-process-head]) {
 	display: none;
 }
 
-.message-slot:not(.process-open) .activity-timeline[data-process-head] > .activity-item {
+.message-slot[data-turn-open="false"] .activity-timeline[data-process-head] > .activity-item {
 	display: none;
 }
 .activity-timeline + .activity-timeline {
@@ -929,15 +929,12 @@
 	min-width: 0;
 }
 
-/* Reasoning, following pi: the text itself is the block, in italic
-   `thinkingText`, with a collapsed placeholder swapped in on demand.
-
-   pi drives that swap from a global header toggle. There is no such header
-   here, so the block is its own control and carries the ARIA button contract
-   the `<summary>` it replaces used to provide for free. */
+/* Reasoning is content, not a control: the turn's process handle above is the
+   only fold. A run still filling in shows `.thinking-collapsed` — the label plus
+   the animated dots — and swaps it for `.thinking-text` on the first character,
+   so the reader never opens a second disclosure to read reasoning. */
 .thinking-block {
 	min-width: 0;
-	cursor: pointer;
 }
 
 /* Horizontal padding matches `.assistant-text` so reasoning and prose share a
@@ -968,7 +965,7 @@
    inset as `.thinking-text`, so toggling moves only the body, never the
    edges. */
 .thinking-collapsed {
-	display: none;
+	display: block;
 	padding: 4px 0;
 	color: var(--pi-theme-thinking-text);
 	font-family: var(--vscode-font-family);
@@ -986,20 +983,21 @@
 	white-space: nowrap;
 }
 
-.is-active-thinking > .thinking-block:not(.is-expanded) .thinking-collapsed {
+.is-active-thinking > .thinking-block .thinking-collapsed {
 	animation: thinking-breathe 2.4s ease-in-out infinite;
 }
 
-.is-active-thinking > .thinking-block:not(.is-expanded) .thinking-dot-one {
+.is-active-thinking > .thinking-block .thinking-dot-one {
 	animation: thinking-dot-one 2s step-end infinite;
 }
 
-.is-active-thinking > .thinking-block:not(.is-expanded) .thinking-dot-two {
+.is-active-thinking > .thinking-block .thinking-dot-two {
 	animation: thinking-dot-two 2s step-end infinite;
 }
 
-.is-active-thinking > .thinking-block:not(.is-expanded) .thinking-dot-three {
+.is-active-thinking > .thinking-block .thinking-dot-three {
 	animation: thinking-dot-three 2s step-end infinite;
+}
 }
 
 @keyframes thinking-dot-one {
@@ -1047,29 +1045,6 @@
 	50% {
 		opacity: 1;
 	}
-}
-
-.thinking-block:not(.is-expanded) .thinking-text {
-	display: none;
-}
-
-.thinking-block:not(.is-expanded) .thinking-collapsed {
-	display: block;
-}
-
-/* Hover brightens the collapsed placeholder only. On the expanded body it would
-   mean something different: there the text is content being read, not a label
-   on a control, and lifting it to full-strength `text` also drops the contrast
-   step that marks reasoning as secondary to the prose around it. Streaming
-   reasoning is covered by the same selector — it renders `.thinking-text` and
-   is not clickable yet, so it must not react to the pointer either. */
-.thinking-block:hover .thinking-collapsed {
-	color: var(--pi-theme-text);
-}
-
-.thinking-block:focus-visible {
-	outline: 1px solid var(--pi-focus-ring);
-	outline-offset: 2px;
 }
 
 /* The tool box: pi's most recognisable transcript element.

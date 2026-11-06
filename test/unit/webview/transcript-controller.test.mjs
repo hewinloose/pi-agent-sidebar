@@ -3,14 +3,11 @@ import test from "node:test";
 import { transcriptHarness } from "../../helpers/transcript-harness.mjs";
 
 const message = (role, text, timestamp) => ({ role, content: [{ type: "text", text }], timestamp });
-const thinkingBlock = (thinkingKey) => ({ dataset: { thinkingKey }, getBoundingClientRect: () => ({ top: 0 }) });
 
-test("snapshot preserves buffered reply and session switch drops it and disclosures", async (t) => {
+test("snapshot preserves a buffered reply and a session switch drops it", async (t) => {
  const { controller, state, effects } = await transcriptHarness(t);
  const reply = message("assistant", "partial", 2);
  state.streamingMessage = controller.playback.start(reply);
- controller.setThinkingVisibility(thinkingBlock("old-thinking-0"), false);
- assert.equal(controller.isThinkingExpanded("old-thinking-0"), false);
  controller.adoptSnapshot([message("user", "question", 1)]);
  controller.reconcileSnapshot(false, true);
  assert.equal(controller.playback.isActive, true);
@@ -19,8 +16,6 @@ test("snapshot preserves buffered reply and session switch drops it and disclosu
  controller.reconcileSnapshot(true, false);
  assert.equal(state.streamingMessage, undefined);
  assert.equal(controller.playback.isActive, false);
- // The choice died with the session; the default (hidden) is back.
- assert.equal(controller.isThinkingExpanded("old-thinking-0"), false);
  assert.ok(effects.includes("media"));
  assert.ok(effects.includes("follow"));
 });
@@ -64,37 +59,74 @@ test("progressive transcript keeps omitted count stable and hides empty streamin
  assert.equal(children.some((node) => node.message?.role === "assistant"), false);
 });
 
-test("reasoning shows while the reply streams and folds once it settles", async (t) => {
- const { controller, state } = await transcriptHarness(t);
- const thinking = { type: "thinking", thinking: "weighing options" };
- const reply = { role: "assistant", content: [thinking, { type: "text", text: "answer" }], timestamp: 2 };
- // Nothing is live yet, so nothing is open.
- assert.equal(controller.isThinkingExpanded("message-9-thinking-0"), false);
- const streaming = controller.playback.start(reply);
- state.streamingIndex = 1;
- state.streamingMessage = streaming;
- const thinkingKey = `${controller.messageKey(streaming)}-thinking-0`;
- // While the answer is still being written, the reasoning is on screen.
- assert.equal(controller.isThinkingExpanded(thinkingKey), true);
- controller.settle(reply);
- // Identity is inherited, so the key survives the settle; the state does not.
- assert.equal(controller.isThinkingExpanded(thinkingKey), false);
+test("a turn folds every step into one handle and a settled turn starts closed", async (t) => {
+ const { controller, state, children } = await transcriptHarness(t);
+ const stepOne = {
+  role: "assistant",
+  content: [
+   { type: "thinking", thinking: "weighing" },
+   { type: "toolCall", id: "a", name: "bash", arguments: { command: "ls" } },
+  ],
+  timestamp: 2,
+ };
+ const stepTwo = {
+  role: "assistant",
+  content: [{ type: "toolCall", id: "b", name: "read", arguments: { path: "x" } }],
+  timestamp: 3,
+ };
+ state.messages = [message("user", "go", 1), stepOne, stepTwo];
+ controller.render();
+ const rows = children.filter((node) => node.message?.role === "assistant").map((node) => node.turnProcess);
+ // One handle for the turn, on its first step: the second step must not carry one.
+ assert.deepEqual(rows.map((row) => row.isHead), [true, false]);
+ assert.equal(rows[0].turnId, rows[1].turnId);
+ // Counts cover the whole turn, from its first step to its last.
+ assert.equal(rows[0].label, "2 次工具操作");
+ assert.equal(rows[0].note, "含思考");
+ // Settled: closed until the reader says otherwise.
+ assert.equal(rows[0].open, false);
 });
 
-test("a reader's toggle outranks the stream and survives the settle", async (t) => {
- const { controller, state } = await transcriptHarness(t);
- const thinking = { type: "thinking", thinking: "weighing options" };
- const reply = { role: "assistant", content: [thinking, { type: "text", text: "answer" }], timestamp: 2 };
- const streaming = controller.playback.start(reply);
+test("a live turn starts open and the reader's choice outranks the settle", async (t) => {
+ const { controller, state, children } = await transcriptHarness(t);
+ const reply = {
+  role: "assistant",
+  content: [{ type: "thinking", thinking: "hmm" }, { type: "text", text: "answer" }],
+  timestamp: 2,
+ };
  state.streamingIndex = 1;
- state.streamingMessage = streaming;
- const thinkingKey = `${controller.messageKey(streaming)}-thinking-0`;
- assert.equal(controller.isThinkingExpanded(thinkingKey), true);
- // The reader closes it mid-stream: that decision has to outlive the answer.
- controller.setThinkingVisibility(thinkingBlock(thinkingKey), false);
- assert.equal(controller.isThinkingExpanded(thinkingKey), false);
+ state.streamingMessage = reply;
+ state.messages = [message("user", "go", 1)];
+ controller.render();
+ const live = children.find((node) => node.message?.role === "assistant").turnProcess;
+ // A turn still being written is open, so the reader can watch the work.
+ assert.equal(live.open, true);
+ controller.setTurnProcess(live.turnId, false);
  controller.settle(reply);
- assert.equal(controller.isThinkingExpanded(thinkingKey), false);
+ controller.render();
+ const settled = children.filter((node) => node.message?.role === "assistant").at(-1).turnProcess;
+ // The reader closed it mid-stream, so the settle must not reopen it.
+ assert.equal(settled.open, false);
+});
+
+test("a new session drops the turn choices", async (t) => {
+ const { controller, state, children } = await transcriptHarness(t);
+ const reply = { role: "assistant", content: [{ type: "thinking", thinking: "hmm" }], timestamp: 2 };
+ state.messages = [message("user", "go", 1), reply];
+ controller.render();
+ const first = children.find((node) => node.message?.role === "assistant").turnProcess;
+ controller.setTurnProcess(first.turnId, true);
+ controller.render();
+ assert.equal(controller.turnProcessFor(controller.messageKey(reply)).open, true);
+ state.messages = [
+  message("user", "other", 3),
+  { role: "assistant", content: [{ type: "thinking", thinking: "other" }], timestamp: 4 },
+ ];
+ controller.reconcileSnapshot(true, false);
+ controller.render();
+ const next = children.filter((node) => node.message?.role === "assistant").at(-1).turnProcess;
+ // The choice died with the session: a settled turn is closed again.
+ assert.equal(next.open, false);
 });
 
 test("history actions address prompts from the start of the session, not from the window", async (t) => {
@@ -120,16 +152,6 @@ test("history actions address prompts from the start of the session, not from th
   [3, 3],
   [4, 3],
  ]);
-});
-
-test("reasoning visibility survives being handed to the renderer detached", async (t) => {
- const { controller } = await transcriptHarness(t);
- // The DOM layer reads this off the controller and passes it to the renderer, so
- // it has to keep its receiver. A prototype method throws when called this way,
- // and that throw aborts the frame that draws the transcript — every message in
- // it, not just the reasoning block.
- const { isThinkingExpanded } = controller;
- assert.equal(isThinkingExpanded("message-1-thinking-0"), false);
 });
 
 test("a reply's copy cursor resolves to pi's own answer text", async (t) => {

@@ -24,7 +24,7 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
 
  function patchStreamingMessage(slot: Element, message: PiMessage, resultMap: ReadonlyMap<string, PiMessage>, messageKey: string): Element | undefined {
   const controller = options.controller();
-  const sections = assistantMessageSections(message, resultMap, controller.liveTools, true, messageKey, true, (key) => controller.isThinkingExpanded(key));
+  const sections = assistantMessageSections(message, resultMap, controller.liveTools, true, messageKey, true, controller.turnProcessFor(messageKey));
   const host = slot.querySelector(":scope > .message");
   if (!host || !host.classList.contains("assistant-message")) return undefined;
   const snapshot = captureExpandableState(slot);
@@ -149,7 +149,7 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
   }
   const isStreaming = message === ui.streamingMessage;
   const controller = options.controller();
-  const html = messageHtml(message, context.resultMap, controller.liveTools, isStreaming, entry.key, (key) => controller.isThinkingExpanded(key), context.promptOrdinals.get(entry.key));
+  const html = messageHtml(message, context.resultMap, controller.liveTools, isStreaming, entry.key, context.promptOrdinals.get(entry.key), context.turnProcess.get(entry.key));
   const node = document.createElement("div");
   node.className = "message-slot";
   applyMessageBoundaryClasses(node, message);
@@ -157,25 +157,30 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
   // The glyph is appended rather than rendered: the sanitizer keeps the HTML
   // profile, so an inline <svg> in the markup would never survive it.
   enhanceMessageActions(node);
+  applyTurnState(node, context.turnProcess.get(entry.key));
   const snapshot = previous ? captureExpandableState(previous) : undefined;
-  applyProcessState(node, snapshot?.processChoice, isStreaming);
   if (snapshot) applyExpandableState(node, snapshot);
   if (!isStreaming) enhanceRenderedNodes(node);
   return node;
  }
 
- /**
-  * Applies the process group's state.
-  *
-  * The reader's own decision is the only thing remembered; without one the group
-  * follows the stream — open while the reply is still being written, closed once
-  * the answer has landed.
-  */
- function applyProcessState(node: Element, choice: "open" | "closed" | undefined, isStreaming: boolean): void {
-  const open = choice === "open" || (choice === undefined && isStreaming);
-  node.classList.toggle("process-open", open);
-  node.querySelector<HTMLElement>("[data-expandable=\"process\"]")?.setAttribute("aria-expanded", open ? "true" : "false");
- }
+/**
+ * Marks the slot with its turn and that turn's disclosure state.
+ *
+ * The class lives on every step's slot, so CSS can fold the whole turn while
+ * each step keeps its own node: one turn is many messages, and the streaming
+ * patcher and the progressive window both depend on that one-node-per-message
+ * shape.
+ */
+function applyTurnState(
+ node: Element,
+ process: { readonly turnId: number; readonly open: boolean } | undefined,
+): void {
+ if (!process) return;
+ node.setAttribute("data-turn-id", String(process.turnId));
+ node.setAttribute("data-turn-open", process.open ? "true" : "false");
+ node.querySelector<HTMLElement>('[data-expandable="process"]')?.setAttribute("aria-expanded", process.open ? "true" : "false");
+}
  function applyExpandableState(node: Element, snapshot: ExpandableSnapshot): void {
   if (snapshot.tools.size === 0 && snapshot.skills.size === 0) return;
   for (const tool of node.querySelectorAll<HTMLElement>(".tool-call.expandable[data-tool-key]")) {
@@ -190,27 +195,21 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
  function toggleExpandable(element: HTMLElement): void {
   if (window.getSelection()?.toString()) return;
   options.anchor.detach();
-  // The process handle opens the whole run of reasoning and tool calls, so its
-  // state lives on the slot rather than on the button.
-  if (element.dataset.expandable === "process") {
-   const slot = element.closest(".message-slot");
-   const open = !slot?.classList.contains("process-open");
-   slot?.classList.toggle("process-open", open);
-   // Remembered, so settling cannot undo a decision the reader made mid-stream.
-   slot?.setAttribute("data-process-choice", open ? "open" : "closed");
-   element.setAttribute("aria-expanded", open ? "true" : "false");
-   options.scheduleMeasure();
-   return;
-  }
-  const isThinking = element.dataset.expandable === "thinking";
-  const isExpanding = !element.classList.contains(isThinking ? "is-expanded" : "expanded");
-  if (isThinking) options.controller().setThinkingVisibility(element, isExpanding);
-  else {
-   if (isExpanding && element.dataset.expandable === "tool") ensureToolBodyMounted(element);
-   setExpandedState(element, isExpanding);
-  }
+ // The process handle opens the whole turn of reasoning and tool calls, so its
+ // state lives in the controller, keyed by turn, rather than on this slot.
+ if (element.dataset.expandable === "process") {
+  const slot = element.closest<HTMLElement>(".message-slot");
+  const turnId = Number(slot?.dataset.turnId ?? "");
+  if (!slot || !Number.isFinite(turnId)) return;
+  options.controller().setTurnProcess(turnId, slot.dataset.turnOpen !== "true");
   options.scheduleMeasure();
+  return;
  }
+ const isExpanding = !element.classList.contains("expanded");
+ if (isExpanding && element.dataset.expandable === "tool") ensureToolBodyMounted(element);
+ setExpandedState(element, isExpanding);
+ options.scheduleMeasure();
+}
  function ensureToolBodyMounted(element: HTMLElement): void {
   if (element.dataset.toolBody !== "lazy") return;
   const id = element.dataset.toolKey;
@@ -350,8 +349,6 @@ interface StreamUpdate { selector?: string; text: string; format: "markdown" | "
 interface ExpandableSnapshot {
  tools: Set<string>;
  skills: Set<string>;
- /** Only the reader's own decision; an unset choice follows the stream. */
- processChoice: "open" | "closed" | undefined;
 }
 function captureExpandableState(previous: Element): ExpandableSnapshot {
  const tools = new Set<string>();
@@ -362,18 +359,11 @@ function captureExpandableState(previous: Element): ExpandableSnapshot {
  for (const skill of previous.querySelectorAll<HTMLElement>(".skill-block[data-skill-key]")) {
   if (skill.dataset.skillKey && skill.classList.contains("expanded")) skills.add(skill.dataset.skillKey);
  }
- const choice = previous.getAttribute("data-process-choice");
- return {
-  tools,
-  skills,
-  processChoice: choice === "open" || choice === "closed" ? choice : undefined,
- };
+ return { tools, skills };
 }
 function setExpandedState(element: HTMLElement, expanded: boolean): void {
- const thinking = element.dataset.expandable === "thinking";
- element.classList.toggle(thinking ? "is-expanded" : "expanded", expanded);
+ element.classList.toggle("expanded", expanded);
  element.setAttribute("aria-expanded", expanded ? "true" : "false");
- if (thinking) element.setAttribute("aria-label", `推理过程，点击${expanded ? "收起" : "展开"}`);
 }
 function applyMessageBoundaryClasses(slot: Element, message: PiMessage): void {
  const blocks = Array.isArray(message.content) ? message.content : [];

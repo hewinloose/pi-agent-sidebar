@@ -1157,7 +1157,6 @@ function scheduleRender(): void {
 function render(): void {
 	headerRenderer.render();
 	transcriptController.render();
-	transcriptController.restoreThinkingAnchor((offset) => scrollAnchor.adjustBy(offset));
 	composerRenderer.renderAttachments();
 	renderComposerHighlights();
 	composerRenderer.renderSelectors();

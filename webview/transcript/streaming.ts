@@ -106,7 +106,7 @@ export interface StreamingPlaybackFrame {
 }
 
 export interface StreamingMessagePlaybackOptions {
-	/** Thinking blocks animate only while the reader has explicitly expanded them. */
+	/** Seam for tests that pin the non-animated path; the sidebar always animates. */
 	shouldAnimateThinking?: (message: PiMessage, thinkingIndex: number) => boolean;
 }
 

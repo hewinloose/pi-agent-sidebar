@@ -57,6 +57,10 @@ text comparison".
   viewport following without pausing playback.
 - `finish()` keeps the authoritative message hidden until its buffered text is
   visible — no jump at the end of a reply.
+- A live turn's process handle is open and a settled one is closed, unless the
+  reader toggled it. The choice is stored per turn in the controller
+  (`setTurnProcess`), so a slot rebuilt mid-stream comes back in the same state;
+  see [state-and-rendering.md](./state-and-rendering.md) §10.
 
 ## 5. Follow-bottom is intent-based, not distance-based
 

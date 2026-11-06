@@ -1,6 +1,13 @@
 ﻿# Changelog
 
 ## Unreleased
+- A turn's reasoning and tool calls fold into one line, the way PI-Desktop draws a
+  turn: the handle counts the whole turn's tools, says 含思考 when reasoning sits
+  among them, opens while the turn is running and closes once it settles unless
+  the reader toggled it.
+- Reasoning no longer has a second disclosure. Once it has text it is visible as
+  soon as the turn is open; "思考过程" with the animated dots is only the
+  still-empty state, so reading reasoning never needs a second click.
 - The window status bar no longer carries a Pi Agent phase badge. An item created
   with `createStatusBarItem(id, …)` is only promised an id unique to the
   extension — naming it after the view did not place it in the view title bar, so

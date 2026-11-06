@@ -6,7 +6,7 @@ import { StreamingMessagePlayback } from "./streaming.js";
 import { TranscriptView, type TranscriptEntry } from "./transcriptView.js";
 import { ProgressiveWindow } from "./progressiveWindow.js";
 import { insertReply, withLiveReply } from "./transcriptOrder.js";
-import { thinkingGroupKeyIndex } from "./thinkingGroups.js";
+import { thinkingGroups } from "./thinkingGroups.js";
 import { formatDaySeparator, isNewLocalDay, normalizeEpochMs } from "./messageTime.js";
 import { isRenderableMessage, messageRenderSignature } from "./renderer.js";
 
@@ -33,6 +33,28 @@ export interface MessageRenderContext {
   * rendered list alone.
   */
  promptOrdinals: ReadonlyMap<string, number>;
+ /** The turn's single process disclosure, keyed by message. */
+ turnProcess: ReadonlyMap<string, TurnProcessView>;
+}
+
+/**
+ * The one process handle a turn carries.
+ *
+ * A turn is the prompt plus every assistant step it produced. The handle, its
+ * counts and its open state belong to the turn: counted per message, a turn of
+ * nine steps left nine folded rows in the transcript.
+ */
+export interface TurnProcessView {
+ /** Session-wide ordinal of the prompt that opens the turn. */
+ readonly turnId: number;
+ /** Whole-turn summary, e.g. `3 个命令`. */
+ readonly label: string;
+ /** `含思考` when the turn both reasoned and called tools. */
+ readonly note: string;
+ /** Whether this message carries the turn's only handle. */
+ readonly isHead: boolean;
+ /** The reader's choice, or the stream default when they have not made one. */
+ readonly open: boolean;
 }
 
 
@@ -54,23 +76,18 @@ export interface TranscriptControllerOptions {
 export class TranscriptController {
  readonly liveTools = new Map<string, RpcEventLiveTool>();
  readonly toolResults = new Map<string, PiMessage>();
- private readonly thinkingChoices = new Map<string, boolean>();
+ private readonly turnChoices = new Map<number, boolean>();
  readonly playback: StreamingMessagePlayback;
  private readonly view: TranscriptView<Element>;
  private readonly window = new ProgressiveWindow({ threshold: 60, initial: 40, chunk: 40 });
  private readonly identities = new WeakMap<PiMessage, MessageIdentity>();
  private nextKey = 0;
  private context: MessageRenderContext | undefined;
- private pendingToggle: { thinkingKey: string; viewportTop: number } | undefined;
+ private turnProcessByKey: ReadonlyMap<string, TurnProcessView> = new Map();
  private readonly limit = 150;
 
  constructor(private readonly options: TranscriptControllerOptions) {
-  this.playback = new StreamingMessagePlayback({
-   shouldAnimateThinking: (message, index) =>
-    this.isThinkingExpanded(
-     `${this.messageKey(message)}-thinking-${thinkingGroupKeyIndex(messageBlocks(this.playback.target ?? message), index)}`,
-    ),
-  });
+  this.playback = new StreamingMessagePlayback();
   this.view = new TranscriptView<Element>({
    container: options.container,
    createNode: (entry, previous) => {
@@ -81,26 +98,6 @@ export class TranscriptController {
  }
 
  messageKey(message: PiMessage): string { return `message-${this.identity(message).key}`; }
-
-/**
- * Reasoning shows itself while the reply is still being written, then folds away.
- *
- * The reader watching a turn wants to see what it is doing; once the answer has
- * landed, that reasoning is the work behind it, not the thing to read. So the
- * default follows the stream — live means open, settled means closed — and an
- * explicit toggle outranks both, surviving settling and every later render.
- */
-// A bound property, not a method: the DOM layer reads it off the controller and
-// hands it to the renderer, and a prototype method would lose `this` on the way
-// and blank the whole transcript on the first reply that carries reasoning.
-readonly isThinkingExpanded = (thinkingKey: string): boolean =>
- this.thinkingChoices.get(thinkingKey) ?? this.belongsToLiveReply(thinkingKey);
-
-/** Whether a reasoning key belongs to the reply that is streaming right now. */
-private belongsToLiveReply(thinkingKey: string): boolean {
- const live = this.options.state.streamingMessage;
- return Boolean(live && thinkingKey.startsWith(`${this.messageKey(live)}-thinking-`));
-}
 
 
 /**
@@ -177,8 +174,7 @@ copyTextFor(messageKey: string): string | undefined {
    if (message.role === "toolResult" && message.toolCallId) this.toolResults.set(message.toolCallId, message);
   }
   if (sessionChanged) {
-   this.thinkingChoices.clear();
-   this.pendingToggle = undefined;
+  this.turnChoices.clear();
    this.options.clearMediaRefusals();
    this.view.clear();
   }
@@ -239,7 +235,8 @@ copyTextFor(messageKey: string): string | undefined {
   const capped = renderable.slice(-this.limit);
   const visible = this.window.window(capped, this.view.size === 0);
   const omitted = renderable.length - capped.length + state.omittedMessageCount;
-  this.pruneThinking(visible);
+  const owners = this.turnOwners();
+  const turnProcess = this.turnProcess(visible, owners);
   const entries: TranscriptEntry[] = omitted > 0 ? [{ key: "history-omitted", signature: `omitted:${omitted}` }] : [];
   const byKey = new Map<string, PiMessage>();
   const separatorLabels = new Map<string, string>();
@@ -256,9 +253,10 @@ copyTextFor(messageKey: string): string | undefined {
     }
     previousEpoch = epoch;
    }
-   entries.push({ key, signature: `${messageRenderSignature(message, this.toolResults, this.liveTools, message === streaming, this.signature)}|ts${epoch ?? "-"}|tk${this.thinkingSignature(message, key)}` });
+  entries.push({ key, signature: `${messageRenderSignature(message, this.toolResults, this.liveTools, message === streaming, this.signature)}|ts${epoch ?? "-"}|tp${turnProcessSignature(turnProcess.get(key))}` });
   }
-  this.context = { byKey, omitted, resultMap: this.toolResults, separatorLabels, promptOrdinals: this.promptOrdinals() };
+  this.turnProcessByKey = turnProcess;
+  this.context = { byKey, omitted, resultMap: this.toolResults, separatorLabels, promptOrdinals: owners.ordinals, turnProcess };
   try { this.view.update(entries); } finally { this.context = undefined; }
   if (visible.length < capped.length) this.options.scheduleRender();
  }
@@ -268,9 +266,10 @@ copyTextFor(messageKey: string): string | undefined {
   *
   * Walks the whole snapshot, not the rendered window: the window is a suffix, so
   * its first assistant reply may already have lost the prompt it answers, and
-  * guessing there would address the wrong turn.
+  * guessing there would address the wrong turn. `current` is the turn a live
+  * reply belongs to before the list holds it.
   */
- private promptOrdinals(): ReadonlyMap<string, number> {
+ private turnOwners(): { ordinals: Map<string, number>; current: number } {
   const ordinals = new Map<string, number>();
   let next = this.options.state.omittedPromptCount;
   let owning: number | undefined;
@@ -278,48 +277,87 @@ copyTextFor(messageKey: string): string | undefined {
    if (message.role === "user") owning = next++;
    if (owning !== undefined) ordinals.set(this.messageKey(message), owning);
   }
-  return ordinals;
+  return { ordinals, current: owning ?? Math.max(next - 1, 0) };
  }
 
- private thinkingSignature(message: PiMessage, key: string): string {
-  let signature = "";
-  let index = 0;
-  for (const block of messageBlocks(message)) {
-   if (block.type !== "thinking") continue;
-   signature += this.isThinkingExpanded(`${key}-thinking-${index}`) ? "1" : "0";
-   index += 1;
-  }
-  return signature || "-";
- }
- private pruneThinking(messages: readonly PiMessage[]): void {
-  if (this.thinkingChoices.size === 0) return;
-  const retained = new Set<string>();
-  for (const message of messages) {
-   const key = this.messageKey(message);
-   let index = 0;
-   for (const block of messageBlocks(message)) {
-    if (block.type !== "thinking") continue;
-    retained.add(`${key}-thinking-${index}`);
-    index += 1;
+ /**
+  * The turn's single process handle, counted over the whole turn.
+  *
+  * Counts come from `state.messages`, not from the rendered window: a turn whose
+  * first steps slid past the progressive window must not shrink its own summary.
+  * The handle itself lands on the first *rendered* step that has activity, which
+  * is the turn's real first step whenever the window holds it.
+  */
+ private turnProcess(
+  visible: readonly PiMessage[],
+  owners: { ordinals: ReadonlyMap<string, number>; current: number },
+ ): ReadonlyMap<string, TurnProcessView> {
+  const { state } = this.options;
+  const live = state.streamingMessage;
+  const liveTurn = live ? owners.ordinals.get(this.messageKey(live)) ?? owners.current : undefined;
+  const all = live && !state.messages.includes(live) ? [...state.messages, live] : state.messages;
+  const stats = new Map<number, { tools: number; commandsOnly: boolean; thinkingRuns: number }>();
+  for (const message of all) {
+   if (message.role !== "assistant") continue;
+   const turnId = owners.ordinals.get(this.messageKey(message)) ?? owners.current;
+   const blocks = messageBlocks(message);
+   const tools = blocks.filter((block) => block.type === "toolCall" && block.id && block.name);
+   const entry = stats.get(turnId) ?? { tools: 0, commandsOnly: true, thinkingRuns: 0 };
+   entry.thinkingRuns += thinkingGroups(blocks).length;
+   if (tools.length > 0) {
+    entry.tools += tools.length;
+    entry.commandsOnly = entry.commandsOnly && tools.every((block) => block.name === "bash");
    }
+   stats.set(turnId, entry);
   }
-  for (const key of this.thinkingChoices.keys())
-   if (!retained.has(key)) this.thinkingChoices.delete(key);
+  const heads = new Map<number, string>();
+  for (const message of visible) {
+   const key = this.messageKey(message);
+   const turnId = owners.ordinals.get(key) ?? owners.current;
+   if (heads.has(turnId) || !hasActivity(message)) continue;
+   heads.set(turnId, key);
+  }
+  const result = new Map<string, TurnProcessView>();
+  for (const message of visible) {
+   const key = this.messageKey(message);
+   const turnId = owners.ordinals.get(key) ?? owners.current;
+   const entry = stats.get(turnId);
+   if (!entry || (entry.tools === 0 && entry.thinkingRuns === 0)) continue;
+   result.set(key, {
+    turnId,
+    label:
+     entry.tools === 0
+      ? `${entry.thinkingRuns} 个思考步骤`
+      : entry.commandsOnly
+       ? `${entry.tools} 个命令`
+       : `${entry.tools} 次工具操作`,
+    note: entry.tools > 0 && entry.thinkingRuns > 0 ? "含思考" : "",
+    isHead: heads.get(turnId) === key,
+    open: this.turnChoices.get(turnId) ?? turnId === liveTurn,
+   });
+  }
+  return result;
  }
 
- setThinkingVisibility(element: HTMLElement, expanded: boolean): void {
-  const key = element.dataset.thinkingKey;
-  if (!key) return;
-  this.pendingToggle = { thinkingKey: key, viewportTop: element.getBoundingClientRect().top };
- this.thinkingChoices.set(key, expanded);
-  this.options.scheduleRender();
+ /** The turn disclosure for a rendered message, for the streaming patcher. */
+ turnProcessFor(messageKey: string): TurnProcessView | undefined {
+  return this.turnProcessByKey.get(messageKey);
  }
- restoreThinkingAnchor(adjustBy: (offset: number) => void): void {
-  const pending = this.pendingToggle;
-  this.pendingToggle = undefined;
-  if (!pending) return;
-  const element = this.options.container.querySelector<HTMLElement>(`.thinking-block[data-thinking-key="${CSS.escape(pending.thinkingKey)}"]`);
-  if (element) adjustBy(element.getBoundingClientRect().top - pending.viewportTop);
+
+ /**
+  * Applies the reader's decision to every rendered step of the turn.
+  *
+  * The choice is stored per turn rather than on the slot: a turn is many slots,
+  * and any of them rebuilt by a later frame must come back with the same state.
+  */
+ setTurnProcess(turnId: number, open: boolean): void {
+  this.turnChoices.set(turnId, open);
+  for (const slot of this.options.container.querySelectorAll<HTMLElement>(".message-slot")) {
+   if (slot.dataset.turnId !== String(turnId)) continue;
+   slot.dataset.turnOpen = open ? "true" : "false";
+   slot.querySelector<HTMLElement>('[data-expandable="process"]')?.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  this.options.scheduleMeasure();
  }
 }
 
@@ -334,4 +372,20 @@ export function isSameMessage(left: PiMessage, right: PiMessage): boolean {
 export function hasEquivalentTail(messages: PiMessage[], candidate: PiMessage): boolean {
  const tail = messages.at(-1);
  return Boolean(tail && isSameMessage(tail, candidate));
+}
+
+/** Whether a message carries any reasoning or tool call to fold into a turn. */
+function hasActivity(message: PiMessage): boolean {
+ if (message.role !== "assistant") return false;
+ for (const block of messageBlocks(message)) {
+  if (block.type === "thinking") return true;
+  if (block.type === "toolCall" && block.id && block.name) return true;
+ }
+ return false;
+}
+
+/** Only the values a rebuild would change; a stable turn must not re-render. */
+function turnProcessSignature(process: TurnProcessView | undefined): string {
+ if (!process) return "-";
+ return `${process.turnId}:${process.isHead ? 1 : 0}:${process.open ? 1 : 0}:${process.label}:${process.note}`;
 }
