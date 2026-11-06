@@ -104,3 +104,41 @@ Icon row actions (lucide + zh-CN copy) under the bubble instead of inside it; re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: 移除底栏状态项并中文化用量说明
+<!-- trellis-session: v=2 fp=c3eefdf18bca3315 -->
+
+**Date**: 2026-11-06
+**Task**: 移除底栏状态项并中文化用量说明
+**Branch**: `main`
+
+### Summary
+
+底栏 Pi Agent 运行阶段条目移除；用量弹层标签与占位文案改为中文，测试与 spec 同步修正。
+
+### Main Changes
+
+- 删除 createStatusBarItem 条目与 bindViewTitle/updateViewTitle，阶段信息只留在侧栏头部 connectionLabel
+- usageRows() 标签中文化：上下文/输入/输出/缓存读取/缓存写入/总 token/费用/消息/工具调用
+- manifest 测试反过来锁定不再创建状态栏条目，region-renderers 断言完整中文行表
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13028bc` | fix(sidebar): drop the status-bar phase badge and localize the usage panel |
+| `e69e393` | docs(spec): pin the runtime phase to the sidebar header |
+
+### Testing
+
+- [OK] npm run verify：typecheck + 440 用例（437 pass / 3 skipped）+ 可复现构建
+- [OK] npm run package 后 code --install-extension --force 安装 1.0.3，产物含新文案
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 在 VS Code 重载窗口后肉眼确认底栏条目消失与弹层中文
