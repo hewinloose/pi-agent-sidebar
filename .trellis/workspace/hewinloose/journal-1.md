@@ -174,3 +174,36 @@ Icon row actions (lucide + zh-CN copy) under the bubble instead of inside it; re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: 回复动作与间距只留在轮次回答上
+<!-- trellis-session: v=2 fp=e6ccbcd01c8d004c -->
+
+**Date**: 2026-11-06
+**Task**: 回复动作与间距只留在轮次回答上
+**Branch**: `main`
+
+### Summary
+
+中间步骤不再挂复制/分支/重新生成；折叠轮次里的空步骤不再占位，步骤旁白与回答之间不再多一整行；选中正文后仍能点开过程表头。
+
+### Main Changes
+
+- controller 新增 turnAnswers / turnAnswerGaps，回答与间距标记进渲染上下文与签名
+- renderer 以 isAnswer 门控动作；dom 写入 data-turn-step / empty / head / after-step
+- CSS 隐藏折叠轮次里的纯活动步骤、取消回答前的一层间距；选区守卫改用 Selection.containsNode
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c3a3b2` | fix(transcript): keep reply actions and spacing on the turn's answer |
+
+### Testing
+
+- [OK] npm run verify：445 用例（442 pass / 3 skipped）+ 可复现构建
+- [OK] npm run package 后 code --install-extension --force 安装 1.0.3
+
+### Status
+
+[OK] **Completed**
