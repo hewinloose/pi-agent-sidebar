@@ -142,3 +142,35 @@ Icon row actions (lucide + zh-CN copy) under the bubble instead of inside it; re
 ### Next Steps
 
 - 在 VS Code 重载窗口后肉眼确认底栏条目消失与弹层中文
+
+
+## Session 4: 整轮的思考与工具调用折叠成一级
+<!-- trellis-session: v=2 fp=84962920d7bbf74e -->
+
+**Date**: 2026-11-06
+**Task**: 整轮的思考与工具调用折叠成一级
+**Branch**: `main`
+
+### Summary
+
+过程折叠从每条消息提升到每一轮：一个表头、整轮统计、流式开/结束关，思考不再单独折叠。
+
+### Main Changes
+
+- controller 新增 turnOwners/turnProcess，开合状态按轮存放
+- renderer 只在轮次首个有活动的步骤输出表头；思考正文默认可见，占位只用于空段
+- CSS 收合改挂 data-turn-open，删除 .process-open 与思考块控制态
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `515c6f0` | feat(transcript): fold a whole turn's work into one process handle |
+
+### Testing
+
+- [OK] npm run verify：441 用例（438 pass / 3 skipped）+ 可复现构建
+
+### Status
+
+[OK] **Completed**
