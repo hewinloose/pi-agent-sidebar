@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/webview/index.md", "reason": "webview 的 model/renderer/controller 分层与命名约定，轮次逻辑要放对层"}
+{"file": ".trellis/spec/webview/state-and-rendering.md", "reason": "渲染管线、签名与增量更新的约定，轮次统计要接进现有 signature 机制"}
+{"file": ".trellis/spec/webview/streaming-and-scroll.md", "reason": "流式期间的渲染与滚动不变量，过程开合的默认值必须不破坏它们"}
+{"file": ".trellis/spec/webview/dom-and-styles.md", "reason": "DOM 构建、事件委托与 CSS 归属约定，data-turn-* 与收合样式要照此落地"}
+{"file": ".trellis/spec/quality/testing.md", "reason": "webview 用例如何加载与断言，轮次场景要在既有 harness 里写"}

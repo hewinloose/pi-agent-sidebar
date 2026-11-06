@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/quality/index.md", "reason": "完成定义：npm run verify 与 UI 改动的手工验证要求"}
+{"file": ".trellis/spec/quality/code-style.md", "reason": "webview 文件用一空格缩进、无 formatter，检查改动是否贴合原文件"}
+{"file": ".trellis/spec/webview/state-and-rendering.md", "reason": "核对轮次折叠是否仍遵守签名/增量更新的契约"}
+{"file": ".trellis/spec/webview/streaming-and-scroll.md", "reason": "核对流式、滚动锚定与开合默认值没有回归"}
