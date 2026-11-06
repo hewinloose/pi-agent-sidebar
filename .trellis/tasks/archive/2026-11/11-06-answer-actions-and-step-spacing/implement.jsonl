@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/webview/state-and-rendering.md", "reason": "渲染上下文、签名与轮次折叠的既有契约，回答标记要接进同一套 context"}
+{"file": ".trellis/spec/webview/streaming-and-scroll.md", "reason": "流式期间的渲染与滚动不变量，动作与间距改动不能破坏它们"}
+{"file": ".trellis/spec/quality/testing.md", "reason": "webview 用例如何加载与断言，动作/间距的用例写在既有 harness 里"}
