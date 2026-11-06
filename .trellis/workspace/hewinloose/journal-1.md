@@ -207,3 +207,35 @@ Icon row actions (lucide + zh-CN copy) under the bubble instead of inside it; re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: 审核跟进：只有步骤才取消回答前的间距
+<!-- trellis-session: v=2 fp=b32111a1edf6e399 -->
+
+**Date**: 2026-11-06
+**Task**: 审核跟进：只有步骤才取消回答前的间距
+**Branch**: `main`
+
+### Summary
+
+修掉 11-06 十个提交复核出的两处缺陷：afterStep 只认 assistant 步骤；流式补丁在有无正文变化时回退整块重建。
+
+### Main Changes
+
+- turnAnswerGaps 跳过用户提示，回答与提示之间保留正常间距
+- patchStreamingMessage 检测 data-turn-empty 不一致时返回 undefined，交给整块重建刷新槽位与动作行
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `be35d53` | fix(transcript): only a step cancels the gap before its answer |
+
+### Testing
+
+- [OK] npm run verify：446 用例（443 pass / 3 skipped）+ 可复现构建
+- [OK] 新增回归用例：user → answer 的 afterStep 为 false，ack 步骤 → answer 仍为 true
+
+### Status
+
+[OK] **Completed**

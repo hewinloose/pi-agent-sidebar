@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-11-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~209 | Active |
+| `journal-1.md` | ~241 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-11-06 | 审核跟进：只有步骤才取消回答前的间距 | `be35d53` | `main` |
 | 5 | 2026-11-06 | 回复动作与间距只留在轮次回答上 | `4c3a3b2` | `main` |
 | 4 | 2026-11-06 | 整轮的思考与工具调用折叠成一级 | `515c6f0` | `main` |
 | 3 | 2026-11-06 | 移除底栏状态项并中文化用量说明 | `13028bc`, `e69e393` | `main` |
