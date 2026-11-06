@@ -35,6 +35,16 @@ export interface MessageRenderContext {
  promptOrdinals: ReadonlyMap<string, number>;
  /** The turn's single process disclosure, keyed by message. */
  turnProcess: ReadonlyMap<string, TurnProcessView>;
+ /**
+  * Messages that carry their turn's answer.
+  *
+  * Reply actions belong to the answer, not to every step with prose in it: a
+  * step whose only text is an acknowledgment had Copy/Branch/Regenerate under it
+  * and read like a second answer.
+  */
+ answerKeys: ReadonlySet<string>;
+ /** Answers that directly follow a step's remark inside their turn. */
+ afterStepKeys: ReadonlySet<string>;
 }
 
 /**
@@ -237,6 +247,8 @@ copyTextFor(messageKey: string): string | undefined {
   const omitted = renderable.length - capped.length + state.omittedMessageCount;
   const owners = this.turnOwners();
   const turnProcess = this.turnProcess(visible, owners);
+  const answerKeys = this.turnAnswers(visible, owners);
+  const afterStepKeys = this.turnAnswerGaps(visible, owners, answerKeys);
   const entries: TranscriptEntry[] = omitted > 0 ? [{ key: "history-omitted", signature: `omitted:${omitted}` }] : [];
   const byKey = new Map<string, PiMessage>();
   const separatorLabels = new Map<string, string>();
@@ -253,10 +265,10 @@ copyTextFor(messageKey: string): string | undefined {
     }
     previousEpoch = epoch;
    }
-  entries.push({ key, signature: `${messageRenderSignature(message, this.toolResults, this.liveTools, message === streaming, this.signature)}|ts${epoch ?? "-"}|tp${turnProcessSignature(turnProcess.get(key))}` });
+  entries.push({ key, signature: `${messageRenderSignature(message, this.toolResults, this.liveTools, message === streaming, this.signature)}|ts${epoch ?? "-"}|tp${turnProcessSignature(turnProcess.get(key))}|ans${answerKeys.has(key) ? 1 : 0}|gap${afterStepKeys.has(key) ? 1 : 0}` });
   }
   this.turnProcessByKey = turnProcess;
-  this.context = { byKey, omitted, resultMap: this.toolResults, separatorLabels, promptOrdinals: owners.ordinals, turnProcess };
+  this.context = { byKey, omitted, resultMap: this.toolResults, separatorLabels, promptOrdinals: owners.ordinals, turnProcess, answerKeys, afterStepKeys };
   try { this.view.update(entries); } finally { this.context = undefined; }
   if (visible.length < capped.length) this.options.scheduleRender();
  }
@@ -278,6 +290,27 @@ copyTextFor(messageKey: string): string | undefined {
    if (owning !== undefined) ordinals.set(this.messageKey(message), owning);
   }
   return { ordinals, current: owning ?? Math.max(next - 1, 0) };
+ return { ordinals, current: owning ?? Math.max(next - 1, 0) };
+ }
+
+ /**
+  * Marks each turn's answer: its last assistant message that carries prose.
+  *
+  * Read over the rendered list so a step that is not on screen cannot claim the
+  * actions. A turn with no prose at all (tools only) marks nothing, which is the
+  * same reason a command row never sprouted Copy before.
+  */
+ private turnAnswers(
+  visible: readonly PiMessage[],
+  owners: { ordinals: ReadonlyMap<string, number>; current: number },
+ ): ReadonlySet<string> {
+  const last = new Map<number, string>();
+  for (const message of visible) {
+   if (message.role !== "assistant" || !hasAnswerText(message)) continue;
+   const key = this.messageKey(message);
+   last.set(owners.ordinals.get(key) ?? owners.current, key);
+  }
+  return new Set(last.values());
  }
 
  /**
@@ -339,6 +372,29 @@ copyTextFor(messageKey: string): string | undefined {
   return result;
  }
 
+ /**
+  * Marks answers that directly follow a step of the same turn.
+  *
+  * The two slots are adjacent, so the transcript's own gap plus the answer's
+  * top padding opened a full blank line between a step's remark and the prose
+  * that answers it. CSS cancels the gap for these slots and leaves the padding.
+  */
+ private turnAnswerGaps(
+  visible: readonly PiMessage[],
+  owners: { ordinals: ReadonlyMap<string, number>; current: number },
+  answerKeys: ReadonlySet<string>,
+ ): ReadonlySet<string> {
+  const gaps = new Set<string>();
+  const lastByTurn = new Map<number, string>();
+  for (const message of visible) {
+   const key = this.messageKey(message);
+   const turnId = owners.ordinals.get(key) ?? owners.current;
+   if (answerKeys.has(key) && lastByTurn.has(turnId)) gaps.add(key);
+   lastByTurn.set(turnId, key);
+  }
+  return gaps;
+ }
+
  /** The turn disclosure for a rendered message, for the streaming patcher. */
  turnProcessFor(messageKey: string): TurnProcessView | undefined {
   return this.turnProcessByKey.get(messageKey);
@@ -388,4 +444,13 @@ function hasActivity(message: PiMessage): boolean {
 function turnProcessSignature(process: TurnProcessView | undefined): string {
  if (!process) return "-";
  return `${process.turnId}:${process.isHead ? 1 : 0}:${process.open ? 1 : 0}:${process.label}:${process.note}`;
+}
+
+/** Whether any block of the message holds prose the reader could copy. */
+function hasAnswerText(message: PiMessage): boolean {
+ for (const block of messageBlocks(message)) {
+  if (block.type !== "text") continue;
+  if ((block.text ?? "").trim().length > 0) return true;
+ }
+ return false;
 }

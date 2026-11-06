@@ -156,6 +156,14 @@ answer text. Copy therefore needs no ordinal — it stays available on a row who
 opening prompt fell outside the window, and while a turn is running. The four
 history buttons are always in the DOM; the handler refuses them while pi is busy,
 so a stream start never rebuilds a row.
+
+Reply actions belong to that answer and to nothing else: `turnAnswers()` marks
+the last assistant message with prose in each turn, and the renderer only emits
+`messageActionsHtml` for the marked message. A step whose prose is an
+acknowledgment (`Trellis SessionStart ✓`) keeps its text but gets no second row
+of Copy / Branch / Regenerate. Because the flag is part of the entry signature,
+a message that becomes the answer mid-stream is rebuilt instead of keeping the
+actions it had as a step.
 The ordinal is computed by `TranscriptController.turnOwners()` over the whole
 snapshot — **not** the rendered window — and offset by
 `state.omittedPromptCount`, which the host supplies because a windowed snapshot
@@ -187,3 +195,16 @@ first *rendered* step with activity has `isHead: true`; `renderer.ts` emits the
   `.thinking-text` as soon as a section has text; `思考过程` plus the animated
   dots is only the still-empty state. PI-Desktop does the same — its `showThinking`
   preference never controls turn-process folding.
+- A step's prose is a remark beside its tools, not a document section. The slot
+  carries `data-turn-step="true"` when it is not its turn's answer; that drops
+  `.assistant-text`'s top padding and halves the margins to the neighbouring
+  timelines, so an acknowledgment line no longer sits two or three blank rows
+  away from the work around it. The answer keeps the document rhythm.
+- A closed turn is one row: slots whose only content is activity are
+  `display: none` while it is folded (`data-turn-empty`), so they stop
+  contributing the transcript's flex gap; an answer that follows a step's remark
+  (`data-turn-after-step`) cancels that gap and keeps only its own half-line
+  padding.
+- Text selection suppresses a disclosure click only when the selection is inside
+  the element being toggled (`Selection.containsNode`). Guarding on "any selection
+  exists" meant selecting an answer and then clicking the turn handle did nothing.

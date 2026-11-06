@@ -464,6 +464,32 @@
 	margin-top: var(--pi-line);
 }
 
+/* A step's prose is a remark beside its tools, not a document section: the
+   acknowledgment pi streams first ("Trellis SessionStart ✓") is one line, and
+   the document spacing above opened two or three blank rows between it and the
+   work around it. The answer keeps the full rhythm. */
+.message-slot[data-turn-step="true"] .assistant-text {
+	padding-top: 0;
+}
+
+.message-slot[data-turn-step="true"] .assistant-text + .activity-timeline,
+.message-slot[data-turn-step="true"] .activity-timeline + .assistant-text {
+	margin-top: var(--pi-line-half);
+}
+
+/* A closed turn is one row. A step whose only content is activity keeps its
+   slot, and with it the transcript's flex gap — three such steps left a blank
+   band between the handle and the answer. */
+.message-slot[data-turn-open="false"][data-turn-empty="true"][data-turn-head="false"] {
+	display: none;
+}
+
+/* A step's remark and the answer that follows are one thought: cancel the
+   transcript gap so only the answer's own padding separates them. */
+.message-slot[data-turn-after-step="true"] {
+	margin-top: calc(-1 * var(--pi-line-half));
+}
+
 /* Reasoning binds tightly to the answer that follows it. Keep the direction
    explicit: prose → thinking retains the normal full-line activity clearance,
    while thinking → prose lets the answer's own half-line padding set the

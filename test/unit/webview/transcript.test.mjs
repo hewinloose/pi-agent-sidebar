@@ -869,3 +869,17 @@ test("a step that is not the turn's head renders no handle of its own", async ()
 		await loaded.dispose();
 	}
 });
+
+test("a step's prose carries no reply actions, only the turn's answer does", async () => {
+	const loaded = await loadTranscript();
+	try {
+		const step = { role: "assistant", content: [{ type: "text", text: "Trellis SessionStart ✓" }] };
+		const stepHtml = loaded.module.messageHtml(step, new Map(), new Map(), false, "message-4", 2, undefined, false);
+		assert.equal(stepHtml.includes("data-message-action"), false);
+		// The same message as its turn's answer still gets the row.
+		const answerHtml = loaded.module.messageHtml(step, new Map(), new Map(), false, "message-4", 2);
+		assert.match(answerHtml, /data-message-action="copy"/u);
+	} finally {
+		await loaded.dispose();
+	}
+});

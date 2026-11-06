@@ -25,9 +25,11 @@ export async function transcriptHarness(t) {
     ...entry,
     message: context.byKey.get(entry.key),
     omitted: context.omitted,
-   promptOrdinal: context.promptOrdinals.get(entry.key),
-   turnProcess: context.turnProcess.get(entry.key),
-  };
+    promptOrdinal: context.promptOrdinals.get(entry.key),
+    turnProcess: context.turnProcess.get(entry.key),
+    isAnswer: context.answerKeys.has(entry.key),
+    afterStep: context.afterStepKeys.has(entry.key),
+   };
    builds.push(node);
    return node;
   },

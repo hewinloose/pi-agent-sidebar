@@ -8,6 +8,13 @@
 - Reasoning no longer has a second disclosure. Once it has text it is visible as
   soon as the turn is open; "思考过程" with the animated dots is only the
   still-empty state, so reading reasoning never needs a second click.
+- Copy / Branch / Regenerate now sit under the turn's answer only. A step whose
+  prose is just the SessionStart acknowledgment no longer sprouts its own action
+  row, and its one line no longer opens several blank rows before the answer.
+- A folded turn now reads as one row: steps without prose no longer leave blank
+  slots, and the answer that follows a step's remark keeps only its own half line.
+  Selecting text in the answer and then clicking the process handle also works —
+  a selection only blocks a click when it sits inside the thing being toggled.
 - The window status bar no longer carries a Pi Agent phase badge. An item created
   with `createStatusBarItem(id, …)` is only promised an id unique to the
   extension — naming it after the view did not place it in the view title bar, so

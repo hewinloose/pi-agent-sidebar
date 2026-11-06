@@ -172,3 +172,24 @@ test("a reply's copy cursor resolves to pi's own answer text", async (t) => {
  state.messages = [message("user", "question", 1), step];
  assert.equal(controller.copyTextFor(controller.messageKey(step)), undefined);
 });
+
+test("only the last message with prose carries the turn's actions", async (t) => {
+ const { controller, state, children } = await transcriptHarness(t);
+ const ackStep = {
+  role: "assistant",
+  content: [
+   { type: "thinking", thinking: "hmm" },
+   { type: "text", text: "Trellis SessionStart ✓" },
+   { type: "toolCall", id: "a", name: "bash", arguments: { command: "ls" } },
+  ],
+  timestamp: 2,
+ };
+ const answer = { role: "assistant", content: [{ type: "text", text: "the answer" }], timestamp: 3 };
+ state.messages = [message("user", "go", 1), ackStep, answer];
+ controller.render();
+ const rows = children.filter((node) => node.message?.role === "assistant");
+ // The acknowledgment step holds prose too, but the answer owns the actions.
+ assert.deepEqual(rows.map((node) => node.isAnswer), [false, true]);
+ // The answer follows the step's remark, so CSS cancels the slot gap there.
+ assert.deepEqual(rows.map((node) => node.afterStep), [false, true]);
+});

@@ -149,15 +149,21 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
   }
   const isStreaming = message === ui.streamingMessage;
   const controller = options.controller();
-  const html = messageHtml(message, context.resultMap, controller.liveTools, isStreaming, entry.key, context.promptOrdinals.get(entry.key), context.turnProcess.get(entry.key));
+  const isAnswer = context.answerKeys.has(entry.key);
+  const turn = context.turnProcess.get(entry.key);
+  const html = messageHtml(message, context.resultMap, controller.liveTools, isStreaming, entry.key, context.promptOrdinals.get(entry.key), turn, isAnswer);
   const node = document.createElement("div");
   node.className = "message-slot";
+  node.dataset.turnStep = isAnswer ? "false" : "true";
+  node.dataset.turnEmpty = hasProse(message) ? "false" : "true";
+  node.dataset.turnHead = turn?.isHead ? "true" : "false";
+  node.dataset.turnAfterStep = context.afterStepKeys.has(entry.key) ? "true" : "false";
   applyMessageBoundaryClasses(node, message);
   node.replaceChildren(...sanitizedNodes(html));
   // The glyph is appended rather than rendered: the sanitizer keeps the HTML
   // profile, so an inline <svg> in the markup would never survive it.
   enhanceMessageActions(node);
-  applyTurnState(node, context.turnProcess.get(entry.key));
+  applyTurnState(node, turn);
   const snapshot = previous ? captureExpandableState(previous) : undefined;
   if (snapshot) applyExpandableState(node, snapshot);
   if (!isStreaming) enhanceRenderedNodes(node);
@@ -193,7 +199,8 @@ function applyTurnState(
   }
  }
  function toggleExpandable(element: HTMLElement): void {
-  if (window.getSelection()?.toString()) return;
+ const selection = window.getSelection();
+ if (selection?.toString() && selection.containsNode(element, true)) return;
   options.anchor.detach();
  // The process handle opens the whole turn of reasoning and tool calls, so its
  // state lives in the controller, keyed by turn, rather than on this slot.
@@ -426,4 +433,14 @@ function linkifyWorkspacePaths(root: Element): void {
   if (lastIndex < text.length) fragment.append(text.slice(lastIndex));
   node.parentNode?.replaceChild(fragment, node);
  }
+
+}
+
+/** Whether the message renders prose of its own: an answer or a step's remark. */
+function hasProse(message: PiMessage): boolean {
+ for (const block of Array.isArray(message.content) ? message.content : []) {
+  if (block.type !== "text") continue;
+  if ((block.text ?? "").trim().length > 0) return true;
+ }
+ return false;
 }

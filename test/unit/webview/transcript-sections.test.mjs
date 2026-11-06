@@ -658,3 +658,31 @@ test("a closed turn handle hides every item of its run", async () => {
 		"the head keeps the handle and hides the item under it",
 	);
 });
+
+test("a step's prose sits half a line from the work around it", async () => {
+	const css = await readFile("webview/styles/transcript.css", "utf8");
+	assert.match(
+		css,
+		/\.message-slot\[data-turn-step="true"\] \.assistant-text\s*\{\s*padding-top: 0;\s*\}/u,
+		"the step remark drops the document padding",
+	);
+	assert.match(
+		css,
+		/\.message-slot\[data-turn-step="true"\] \.assistant-text \+ \.activity-timeline,[\s\S]{0,160}margin-top: var\(--pi-line-half\);/u,
+		"the step remark keeps half a line from its tools",
+	);
+});
+
+test("a closed turn hides its activity-only steps and cancels the answer gap", async () => {
+	const css = await readFile("webview/styles/transcript.css", "utf8");
+	assert.match(
+		css,
+		/\.message-slot\[data-turn-open="false"\]\[data-turn-empty="true"\]\[data-turn-head="false"\]\s*\{\s*display: none;\s*\}/u,
+		"a step with no prose must not leave a blank slot in the folded turn",
+	);
+	assert.match(
+		css,
+		/\.message-slot\[data-turn-after-step="true"\]\s*\{\s*margin-top: calc\(-1 \* var\(--pi-line-half\)\);\s*\}/u,
+		"the answer keeps only its own padding after a step's remark",
+	);
+});

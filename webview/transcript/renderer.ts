@@ -200,6 +200,7 @@ export function messageHtml(
 		readonly note: string;
 		readonly isHead: boolean;
 	},
+	isAnswer = true,
 ): string {
 	if (message.role === "toolResult") return "";
 	if (message.role === "user") return userMessageHtml(message, promptOrdinal);
@@ -212,6 +213,7 @@ export function messageHtml(
 			messageKey,
 			turnProcess,
 			promptOrdinal,
+			isAnswer,
 		);
 	}
 	if (message.role === "bashExecution") {
@@ -494,6 +496,7 @@ function assistantMessageHtml(
 		readonly isHead: boolean;
 	},
 	promptOrdinal?: number,
+	isAnswer = true,
 ): string {
 	const sections = assistantMessageSections(
 		message,
@@ -504,12 +507,12 @@ function assistantMessageHtml(
 		false,
 		turnProcess,
 	);
-	// The row belongs to the answer, not to the work that led to it: a message
-	// holding only reasoning or a tool call is a step, and hanging Copy or
-	// "regenerate" under a shell command reads as if the command were the reply.
-	// `messageKey` is handed over as the copy cursor: the answer text lives with
-	// the message, and the button must name which message it belongs to.
-	const hasAnswer = sections.some((section) => section.key.startsWith("content-"));
+	// Reply actions belong to the turn's answer, not to every step that happens to
+	// hold prose: an acknowledgment step (`Trellis SessionStart ✓`) used to sprout
+	// Copy/Branch/Regenerate and read like a second answer. The controller marks
+	// the answer; a direct render without turn context keeps the old behaviour.
+	// `messageKey` stays the copy cursor: the answer text lives with the message.
+	const hasAnswer = isAnswer && sections.some((section) => section.key.startsWith("content-"));
 	const actions = hasAnswer
 		? messageActionsHtml("assistant", promptOrdinal, messageKey)
 		: "";
