@@ -1,6 +1,14 @@
 ﻿# Changelog
 
 ## Unreleased
+- The window status bar no longer carries a Pi Agent phase badge. An item created
+  with `createStatusBarItem(id, …)` is only promised an id unique to the
+  extension — naming it after the view did not place it in the view title bar, so
+  the badge sat in the status bar and outlived the sidebar it described. The
+  runtime phase keeps living in the sidebar header.
+- The usage popup opened from the context percentage is labelled in Chinese:
+  上下文 / 输入 / 输出 / 缓存读取 / 缓存写入 / 总 token / 费用 / 消息 / 工具调用,
+  and its placeholders read "pi 暂未上报" and "下次回复后可用".
 - The editor title bar — the row with "split editor" — carries the plugin's own
   logo. Clicking it opens the Pi Agent sidebar, and a window that has never run
   pi gets one started on a brand-new session. The stored session is not resumed

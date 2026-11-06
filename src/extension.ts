@@ -50,20 +50,13 @@ export function activate(context: vscode.ExtensionContext): void {
 	const provider = new PiViewProvider(context, output);
 	activeProvider = provider;
 
-	// The runtime phase lives in the chat view's title bar rather than in the
-	// window status bar: the title bar exists exactly when the sidebar does,
-	// while a window-level entry outlived the runtime it described. It carries no
-	// command, and no label either — the title already names the sidebar.
-	const viewTitleItem = vscode.window.createStatusBarItem(
-		"piAgentSidebar.chatView",
-		vscode.StatusBarAlignment.Left,
-		100,
-	);
-	provider.bindViewTitle(viewTitleItem);
+	// No window status-bar entry for the runtime phase: `createStatusBarItem(id, …)`
+	// only requires an id unique to the extension, so an item named after the view
+	// still lands in the window status bar and outlives the sidebar it describes.
+	// The phase is rendered in the sidebar header instead.
 	context.subscriptions.push(
 		output,
 		provider,
-		viewTitleItem,
 		vscode.window.registerWebviewViewProvider(
 			PiViewProvider.viewType,
 			provider,

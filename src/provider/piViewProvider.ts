@@ -180,23 +180,6 @@ export class PiViewProvider
 	private readonly missedReplies = new MissedReplyQueue();
 	private shutdownPromise: Promise<void> | undefined;
 	/**
-	 * The phase last shown in the title bar. Kept so a rebind can redraw without
-	 * waiting for the next message.
-	 */
-	private viewPhase:
-		| "idle"
-		| "starting"
-		| "ready"
-		| "disconnected"
-		| "error"
-		| "no-workspace" = "idle";
-	private viewTitleItem: vscode.StatusBarItem | undefined;
-	/**
-	 * The state last written to the title-bar item, so a message that leaves it
-	 * unchanged does not redraw it.
-	 */
-	private viewTitleState = "";
-	/**
 	 * Set once a runtime has come up in this window. A later reveal must not count
 	 * as a first launch even if that runtime has since exited.
 	 */
@@ -604,73 +587,6 @@ export class PiViewProvider
 			this.assertSessionMutationContext(client, generation);
 			await this.sendSessionList();
 		});
-	}
-
-	/**
-	 * The view title is the only chrome the extension owns next to the sidebar, and
-	 * it appears exactly when the sidebar does. A window status-bar entry had to be
-	 * shown in every window and reported a runtime that was not serving the reader
-	 * — "Pi starting" sat there for as long as the sidebar stayed closed.
-	 */
-	public bindViewTitle(item: vscode.StatusBarItem): void {
-		this.viewTitleItem = item;
-		// The item is created before the first render on purpose; render it now so
-		// the title bar carries the current phase from the moment it is bound.
-		this.updateViewTitle(this.viewPhase);
-	}
-	private updateViewTitle(
-		phase:
-			| "idle"
-			| "starting"
-			| "ready"
-			| "disconnected"
-			| "error"
-			| "no-workspace",
-	): void {
-		const item = this.viewTitleItem;
-		if (!item) return;
-		this.viewPhase = phase;
-		const modelName = this.state.model?.name ?? this.state.model?.id;
-		const thinking = this.state.thinkingLevel ?? "";
-		const contextPercent = this.state.contextPercent;
-		// Every value in the tooltip is part of the key: `ready` carries each
-		// snapshot refresh, which is exactly when the model, thinking level and
-		// context change. Keying on phase and streaming alone left them stale.
-		const state = [
-			phase,
-			this.streaming ? "streaming" : "idle",
-			modelName ?? "",
-			thinking,
-			typeof contextPercent === "number" ? String(contextPercent) : "",
-		].join("|");
-		if (state === this.viewTitleState) return;
-		this.viewTitleState = state;
-		// No text: the view title already names the sidebar. Only the phase badge
-		// is added to it, and a running turn gets the spinner.
-		if (phase === "starting") item.text = "$(loading~spin)";
-		else if (phase === "ready" && this.streaming) item.text = "$(sync~spin)";
-		else if (phase === "disconnected") item.text = "$(debug-disconnect)";
-		else if (phase === "error") item.text = "$(error)";
-		else item.text = "$(sparkle)";
-		const tooltipParts = ["Pi Agent"];
-		if (phase === "idle") tooltipParts.push("pi 尚未启动。");
-		else if (phase === "starting") tooltipParts.push("pi 正在启动…");
-		else if (phase === "ready") tooltipParts.push("pi 已就绪。");
-		else if (phase === "disconnected") tooltipParts.push("pi 已停止。");
-		else if (phase === "error") tooltipParts.push("pi 出错了。");
-		else if (phase === "no-workspace")
-			// pi was never started because there was nowhere to start it, so this
-			// must not read as a failure. No command is attached: revealing the view
-			// is what reports the actual reason.
-			tooltipParts.push("打开文件夹并信任它即可使用 pi。");
-		if (modelName) tooltipParts.push(`模型：${modelName}`);
-		if (thinking) tooltipParts.push(`思考等级：${thinking}`);
-		if (typeof contextPercent === "number")
-			tooltipParts.push(`上下文：${contextPercent}%`);
-		item.tooltip = tooltipParts.join("\n");
-		// A status bar item is hidden until it is shown, whether or not it is
-		// scoped to a view. Without this the badge never appeared at all.
-		item.show();
 	}
 
 	/**
@@ -1562,9 +1478,6 @@ export class PiViewProvider
 			}
 			if (event.type === "agent_start") {
 				this.streaming = true;
-				// The badge turns into the spinner on `streaming`, and nothing else
-				// repaints it until the turn settles, so it has to be asked here.
-				this.updateViewTitle(this.viewPhase);
 			}
 			if (event.type === "agent_settled") {
 				this.streaming = false;
@@ -2073,10 +1986,6 @@ export class PiViewProvider
 	}
 
 	private async post(message: HostToWebviewMessage): Promise<boolean> {
-		if (message.type === "connection") this.updateViewTitle(message.phase);
-		else if (message.type === "bootstrap" && message.phase === "no-workspace")
-			this.updateViewTitle("no-workspace");
-		else if (message.type === "snapshot") this.updateViewTitle("ready");
 		if (!this.view) return false;
 		const delivered = await this.view.webview.postMessage(message);
 		if (!delivered) {

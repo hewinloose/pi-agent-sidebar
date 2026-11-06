@@ -78,17 +78,17 @@ export function createRuntimeRenderer(options: RuntimeRendererOptions) {
 }
 
 export function usageRows(stats: UiState["stats"], locale?: string): Array<[string, string]> {
- if (!stats) return [["Usage", "Not reported by pi yet"]];
+ if (!stats) return [["用量", "pi 暂未上报"]];
  const rows: Array<[string, string]> = [];
  const usage = stats.contextUsage;
- if (usage) rows.push(["Context", usage.tokens === null || typeof usage.percent !== "number" ? "Unavailable until the next response" : `${formatTokenCount(usage.tokens, locale)} / ${formatTokenCount(usage.contextWindow, locale)} (${Math.round(usage.percent)}%)`]);
+ if (usage) rows.push(["上下文", usage.tokens === null || typeof usage.percent !== "number" ? "下次回复后可用" : `${formatTokenCount(usage.tokens, locale)} / ${formatTokenCount(usage.contextWindow, locale)} (${Math.round(usage.percent)}%)`]);
  const tokens = stats.tokens;
  if (tokens) rows.push(
-  ["Input", formatTokenCount(tokens.input, locale)], ["Output", formatTokenCount(tokens.output, locale)],
-  ["Cache read", formatTokenCount(tokens.cacheRead, locale)], ["Cache write", formatTokenCount(tokens.cacheWrite, locale)], ["Total tokens", formatTokenCount(tokens.total, locale)],
+  ["输入", formatTokenCount(tokens.input, locale)], ["输出", formatTokenCount(tokens.output, locale)],
+  ["缓存读取", formatTokenCount(tokens.cacheRead, locale)], ["缓存写入", formatTokenCount(tokens.cacheWrite, locale)], ["总 token", formatTokenCount(tokens.total, locale)],
  );
- if (typeof stats.cost === "number") rows.push(["Cost", formatCost(stats.cost, locale)]);
- if (typeof stats.totalMessages === "number") rows.push(["Messages", formatTokenCount(stats.totalMessages, locale)]);
- if (typeof stats.toolCalls === "number") rows.push(["Tool calls", formatTokenCount(stats.toolCalls, locale)]);
+ if (typeof stats.cost === "number") rows.push(["费用", formatCost(stats.cost, locale)]);
+ if (typeof stats.totalMessages === "number") rows.push(["消息", formatTokenCount(stats.totalMessages, locale)]);
+ if (typeof stats.toolCalls === "number") rows.push(["工具调用", formatTokenCount(stats.toolCalls, locale)]);
  return rows;
 }

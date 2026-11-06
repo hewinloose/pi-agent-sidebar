@@ -54,15 +54,15 @@ test("manifest preserves public command IDs and selection keybindings", async ()
 	);
 	// The editor title carries the plugin logo as a way back to the sidebar, the
 	// way Claude Code's does. New session is not up there: it sits in the message
-	// header beside the session history button, so the view title holds only the
-	// runtime phase badge.
+	// header beside the session history button, and the runtime phase is rendered
+	// in that same header.
 	assert.deepEqual(manifest.contributes.menus["editor/title"], [
 		{ command: "piAgentSidebar.open", group: "navigation@1" },
 	]);
 	assert.equal(
 		manifest.contributes.menus["view/title"],
 		undefined,
-		"the view title must not carry a command; the phase badge is enough",
+		"the view title must not carry a command; the phase belongs to the header",
 	);
 	// The icon has to be the extension's own, not a codicon: the editor title
 	// renders the command's declared icon, so the path is part of the contract.
@@ -87,18 +87,18 @@ test("manifest preserves public command IDs and selection keybindings", async ()
 	}
 });
 
-test("the view-title badge is shown, scoped to the view, and never starts as starting", async () => {
+test("the runtime phase is shown in the sidebar header, not a window status-bar item", async () => {
 	const provider = await readFile("src/provider/piViewProvider.ts", "utf8");
 	const extension = await readFile("src/extension.ts", "utf8");
-	// Scoping is why the item exists: a window-level entry outlived the sidebar and
-	// reported a runtime nobody was talking to.
-	assert.match(extension, /createStatusBarItem\(\s*"piAgentSidebar\.chatView"/u);
-	// A status bar item is hidden until shown. Without this call the badge never
-	// appeared at all, and a type check cannot see that.
-	assert.match(provider, /item\.show\(\)/u);
-	// The phase starts neutral: activation must not claim a start that has not
-	// happened, which is the "Pi starting forever" bug this replaced.
-	assert.match(provider, /\| "idle"[\s\S]{0,200}= "idle";/u);
+	const header = await readFile("webview/ui/headerRenderer.ts", "utf8");
+	// `createStatusBarItem(id, …)` only requires an id unique to the extension:
+	// naming the item after the view did not scope it to the view title, so it sat
+	// in the window status bar and reported a runtime nobody could open.
+	assert.doesNotMatch(extension, /vscode\.window\.createStatusBarItem|StatusBarAlignment/u);
+	assert.doesNotMatch(provider, /StatusBarItem|bindViewTitle|updateViewTitle/u);
+	// The phase is still reported — by the header, which exists only while the
+	// sidebar does. `connectionLabel` is what it renders the phase from.
+	assert.match(header, /connectionLabel\(/u);
 });
 
 test("the pinned prompt rides a zero-height sticky rail", async () => {

@@ -18,19 +18,29 @@ test("header title preserves trimming, context stripping, title seed and truncat
  state.titleSeed = "x".repeat(80);
  assert.equal(sessionTitle(state), `${"x".repeat(53)}…`);
  assert.equal(connectionLabel({ connection: "ready", busy: true }), "pi 正在工作");
+ assert.equal(connectionLabel({ connection: "starting" }), "pi 正在启动");
  assert.equal(connectionLabel({ connection: "no-workspace" }), "需要工作区");
+ assert.equal(connectionLabel({ connection: "disconnected" }), "pi 已断开");
+ assert.equal(connectionLabel({ connection: "disconnected", connectionDetail: "进程已退出" }), "进程已退出");
 });
 
-test("runtime rows preserve unknown context, zero cost and reported token counts", async (t) => {
+test("runtime rows report Chinese labels while preserving unknown context, zero cost and token counts", async (t) => {
  const loaded = await loadBundledModule({ entry: "webview/ui/runtimeRenderer.ts" });
  t.after(loaded.dispose);
  const { usageRows } = loaded.module;
- assert.deepEqual(usageRows(undefined), [["Usage", "Not reported by pi yet"]]);
+ assert.deepEqual(usageRows(undefined), [["用量", "pi 暂未上报"]]);
  const rows = usageRows({ contextUsage: { tokens: null, percent: null, contextWindow: 200000 }, cost: 0, totalMessages: 0, toolCalls: 0, tokens: { input: 10, output: 2, cacheRead: 3, cacheWrite: 4, total: 19 } }, "en");
- assert.deepEqual(rows[0], ["Context", "Unavailable until the next response"]);
- assert.ok(rows.some(([label, value]) => label === "Total tokens" && value === "19"));
- assert.ok(rows.some(([label]) => label === "Cost"));
- assert.ok(rows.some(([label, value]) => label === "Messages" && value === "0"));
+ assert.deepEqual(rows, [
+  ["上下文", "下次回复后可用"],
+  ["输入", "10"],
+  ["输出", "2"],
+  ["缓存读取", "3"],
+  ["缓存写入", "4"],
+  ["总 token", "19"],
+  ["费用", "$0.00"],
+  ["消息", "0"],
+  ["工具调用", "0"],
+ ]);
 });
 
 test("composer renderer preserves input caching, pending-submit and busy button behavior", async (t) => {
