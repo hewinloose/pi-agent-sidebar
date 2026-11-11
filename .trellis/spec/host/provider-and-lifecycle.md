@@ -22,6 +22,13 @@ commands, creates the output channel, and it delegates:
 - Every registration is pushed into **one** `context.subscriptions` call.
 - Command ids live in `package.json` and are pinned by
   [test/integration/manifest.test.mjs](../../../test/integration/manifest.test.mjs).
+- The editor context menu carries exactly one Pi entry, contributed directly as
+  `{ "command": "piAgentSidebar.focusInput", "when": "editorHasSelection", "group": "navigation@100" }`.
+  There is no `piAgentSidebar.editorContext` submenu and no preset prompts: the
+  menu opens the composer with the selection, and
+  `manifest.test.mjs` pins both the entry and the absence of
+  `contributes.submenus`. Re-introducing a submenu means a second click in front
+  of the only action, so add a top-level entry instead.
 - Fire-and-forget handlers are wrapped and surface failures:
   `provider.renameSession().catch((error: unknown) => { void vscode.window.showWarningMessage(...) })`.
 - `deactivate()` awaits `provider.shutdown()`.
