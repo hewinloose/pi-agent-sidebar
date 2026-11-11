@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/quality/index.md", "reason": "Defines the npm run verify gate that must pass before reporting the task done."}
+{"file": ".trellis/spec/quality/testing.md", "reason": "Runner and test layout rules for updating test/integration/manifest.test.mjs."}

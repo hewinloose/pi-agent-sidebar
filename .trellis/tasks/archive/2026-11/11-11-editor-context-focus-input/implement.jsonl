@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/host/index.md", "reason": "Host-side conventions for activation (src/extension.ts) and the provider (src/provider/piViewProvider.ts) that this task trims."}
+{"file": ".trellis/spec/quality/code-style.md", "reason": "Tabs, no reformatting, and dead-code cleanup expectations when deleting PresetPromptKind/runPresetPrompt."}
