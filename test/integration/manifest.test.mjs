@@ -11,11 +11,6 @@ const expectedCommands = [
 	"piAgentSidebar.showLogs",
 	"piAgentSidebar.renameSession",
 	"piAgentSidebar.exportHtml",
-	"piAgentSidebar.explainSelection",
-	"piAgentSidebar.explainFile",
-	"piAgentSidebar.refactorSelection",
-	"piAgentSidebar.generateTests",
-	"piAgentSidebar.explainDiagnostics",
 	"piAgentSidebar.addFilesToInput",
 ];
 
@@ -44,13 +39,20 @@ test("manifest preserves public command IDs and selection keybindings", async ()
 	assert.deepEqual(manifest.contributes.menus.commandPalette, [
 		{ command: "piAgentSidebar.addFilesToInput", when: "false" },
 	]);
-	assert.deepEqual(
-		manifest.contributes.menus["piAgentSidebar.editorContext"][0],
+	// The selection entry sits at the top level of the editor context menu: the
+	// submenu was a second click in front of the only action worth carrying.
+	// Preset prompts left with it, so no submenu is contributed any more.
+	assert.deepEqual(manifest.contributes.menus["editor/context"], [
 		{
 			command: "piAgentSidebar.focusInput",
 			when: "editorHasSelection",
-			group: "1_ask@0",
+			group: "navigation@100",
 		},
+	]);
+	assert.equal(manifest.contributes.submenus, undefined);
+	assert.equal(
+		manifest.contributes.menus["piAgentSidebar.editorContext"],
+		undefined,
 	);
 	// The editor title carries the plugin logo as a way back to the sidebar, the
 	// way Claude Code's does. New session is not up there: it sits in the message

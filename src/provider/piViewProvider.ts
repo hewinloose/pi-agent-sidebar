@@ -15,7 +15,6 @@ import {
 	PiCapabilityTracker,
 	type PiCapabilityName,
 } from "../rpc/piCapabilities.js";
-import { shouldSnapshotFileReference } from "../../shared/composerReferences.js";
 import {
 	MAX_MISSED_REPLIES,
 	MissedReplyQueue,
@@ -51,10 +50,7 @@ import {
 	type SubmitDelivery,
 	type WorkspaceEntrySuggestion,
 } from "../../shared/protocol.js";
-import {
-	ComposerReferenceStore,
-	MAX_TOTAL_COMPOSER_REFERENCE_BYTES,
-} from "./composerReferenceStore.js";
+import { ComposerReferenceStore } from "./composerReferenceStore.js";
 import { createWebviewDocument } from "../webviewDocument.js";
 import {
 	parseDroppedResource,
@@ -107,26 +103,6 @@ const RESERVED_ARGUMENTS = new Set([
 	"--resume",
 	"-r",
 ]);
-
-export type PresetPromptKind =
-	| "explainSelection"
-	| "explainFile"
-	| "refactorSelection"
-	| "generateTests"
-	| "explainDiagnostics";
-
-const PRESET_INSTRUCTIONS: Record<PresetPromptKind, string> = {
-	explainSelection:
-		"Explain what the selected code does, step by step, and note anything surprising or risky.",
-	explainFile:
-		"Explain what this file does, its main responsibilities, and how its pieces fit together.",
-	refactorSelection:
-		"Refactor the selected code for clarity and maintainability without changing its behavior. Explain the key changes.",
-	generateTests:
-		"Write focused unit tests for the selected code using the project's existing test framework and conventions.",
-	explainDiagnostics:
-		"Explain the reported diagnostics for the selected code and propose a fix.",
-};
 
 class RuntimeUnavailableError extends Error {}
 
@@ -467,68 +443,6 @@ export class PiViewProvider
 		this.pendingComposerFocusRequestId = this.composerFocusRequestSequence;
 		await this.reveal();
 		await this.syncComposerReferences();
-	}
-
-	public async runPresetPrompt(
-		kind: PresetPromptKind,
-		editor: vscode.TextEditor | undefined,
-	): Promise<void> {
-		if (!editor) {
-			void vscode.window.showInformationMessage(
-				"请先在编辑器中打开一个文件，再使用此 Pi 操作。",
-			);
-			return;
-		}
-		const needsSelection =
-			kind === "explainSelection" ||
-			kind === "refactorSelection" ||
-			kind === "generateTests" ||
-			kind === "explainDiagnostics";
-		// A whole-document range stands in for a missing selection, but only as the
-		// range the reference is taken from. Writing it back into `editor.selection`
-		// left the user's file selected merely because they asked pi about it, and
-		// moved their cursor while the preset ran.
-		const referenceRange =
-			needsSelection && editor.selection.isEmpty
-				? new vscode.Selection(
-						editor.document.positionAt(0),
-						editor.document.positionAt(editor.document.getText().length),
-					)
-				: undefined;
-		try {
-			if (kind === "explainFile") {
-				const { document } = editor;
-				if (shouldSnapshotFileReference(document.uri.scheme, document.isDirty)) {
-					const fullRange = new vscode.Selection(
-						document.positionAt(0),
-						document.positionAt(document.getText().length),
-					);
-					this.composerReferenceStore.captureSelection(
-						editor,
-						fullRange,
-						MAX_TOTAL_COMPOSER_REFERENCE_BYTES,
-					);
-				} else {
-					this.composerReferenceStore.captureFile(document.uri);
-				}
-			} else {
-				const id = this.composerReferenceStore.captureSelection(
-					editor,
-					referenceRange,
-				);
-				await this.composerReferenceStore.enrichWithSymbol(id, editor);
-			}
-		} catch (error) {
-			void vscode.window.showWarningMessage(toErrorMessage(error));
-		}
-		this.composerFocusRequestSequence += 1;
-		this.pendingComposerFocusRequestId = this.composerFocusRequestSequence;
-		await this.reveal();
-		await this.syncComposerReferences();
-		await this.post({
-			type: "setComposerText",
-			text: PRESET_INSTRUCTIONS[kind],
-		});
 	}
 
 	public async exportSessionHtml(): Promise<void> {

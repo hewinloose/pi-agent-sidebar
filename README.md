@@ -86,10 +86,9 @@ pi
 
 ### Editor integration
 
-- A right-click **Pi Agent** submenu explains the selection, adds it to the
-  composer with no preset instruction, refactors it, generates tests, explains
-  reported problems, or explains the whole file.
-- **Fix with Pi** appears as a quick fix for the diagnostic under the cursor.
+- Right-clicking a selection offers **Add to Pi Agent Composer**: the
+  sidebar opens, the composer focuses, and the selection arrives as an
+  `@src/file.ts#10-14` reference waiting for your instruction.
 - Explorer's **Pi Agent: Add Files or Folders to Input** action — or holding `Shift`
   while dragging files from Explorer anywhere over the sidebar — inserts the same
   inline references.
@@ -99,12 +98,11 @@ pi
 | Command | What it does |
 | --- | --- |
 | Pi Agent: Open | Reveal the sidebar |
-| Pi Agent: Focus Input with Selection | Open, focus the composer, insert the selection reference |
+| Add to Pi Agent Composer | Open, focus the composer, insert the selection reference |
 | Pi Agent: New Session | Start a fresh session |
 | Pi Agent: New Trellis Task | Create a Trellis task through `.trellis/scripts/task.py` when the workspace has a Trellis layout |
 | Pi Agent: Rename Session | Rename the current session |
 | Pi Agent: Export Session to HTML | Write the current session out as a standalone page |
-| Pi Agent: Explain Selection / Explain File / Refactor Selection / Generate Tests / Explain Problems in Selection | Preset prompts for the editor selection or file |
 | Pi Agent: Add Files or Folders to Input | Attach Explorer selections to the composer |
 | Pi Agent: Restart Runtime | Kill and respawn the pi process |
 | Pi Agent: Show Logs | Open the extension's output channel |

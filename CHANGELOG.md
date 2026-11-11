@@ -1,6 +1,11 @@
 ﻿# Changelog
 
 ## Unreleased
+- The editor context menu carries **Add to Pi Agent Composer** at the
+  top level instead of hiding it behind a **Pi Agent** submenu. The submenu is
+  gone along with the five preset prompts it held (explain selection, explain
+  file, refactor, generate tests, explain problems), and the **Fix with Pi**
+  quick fix left with them.
 - A turn's reasoning and tool calls fold into one line, the way PI-Desktop draws a
   turn: the handle counts the whole turn's tools, says 含思考 when reasoning sits
   among them, opens while the turn is running and closes once it settles unless
