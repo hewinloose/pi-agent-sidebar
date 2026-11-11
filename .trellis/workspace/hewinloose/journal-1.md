@@ -272,3 +272,37 @@ Icon row actions (lucide + zh-CN copy) under the bubble instead of inside it; re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 8: 编辑器右键菜单只保留聚焦输入框
+<!-- trellis-session: v=2 fp=0afa13a68d724d20 -->
+
+**Date**: 2026-11-11
+**Task**: 编辑器右键菜单只保留聚焦输入框
+**Branch**: `main`
+
+### Summary
+
+把「添加到 Pi Agent 对话框」直接放到编辑器右键第一层，删除 Pi Agent 子菜单、五个预设命令与「用 Pi 修复」快速修复；重新打包并覆盖安装 1.0.3。
+
+### Main Changes
+
+- package.json：editor/context 直接贡献 focusInput（editorHasSelection、navigation@100），删除 submenus 与旧菜单段，命令标题改为「添加到 Pi Agent 对话框」
+- extension.ts / piViewProvider.ts：删除 registerPreset、PiFixCodeActionProvider、PresetPromptKind、PRESET_INSTRUCTIONS、runPresetPrompt
+- manifest.test.mjs 锁定新清单；README 中英、CHANGELOG、host spec 同步
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bc6fb30` | feat(editor-menu): offer focus input directly and drop preset prompts |
+| `356d83b` | docs(spec): pin the editor context menu shape |
+
+### Testing
+
+- [OK] npm run verify：typecheck + 单测/集成 + 可复现构建通过（exit 0）
+- [OK] npm run package 后 code --install-extension --force 覆盖安装 1.0.3，安装包清单核对通过
+
+### Status
+
+[OK] **Completed**
