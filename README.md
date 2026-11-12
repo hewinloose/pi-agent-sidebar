@@ -14,7 +14,7 @@ Source: <https://github.com/hewinloose/pi-agent-sidebar>
 
 ## Preview
 
-![Pi Agent Sidebar running in the VS Code auxiliary sidebar](https://origin.picgo.net/2026/08/30/snapshot65fc55d47c1fd643.png)
+![Pi Agent Sidebar running in the VS Code auxiliary sidebar](assets/sidebar-preview.png)
 
 ## Requirements
 
