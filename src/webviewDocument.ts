@@ -67,9 +67,9 @@ export function createWebviewDocument(
 				</div>
 				<section id="empty-state" class="empty-state">
 					<svg class="empty-logo" viewBox="0 0 256 256" width="54" height="54" aria-hidden="true">
-						<rect class="empty-logo-plate" width="256" height="256" rx="48"/>
-						<path class="empty-logo-glyph" d="M48 64h160v32h-24v112h-32V96h-48v112H72V96H48V64Z"/>
-						<path class="empty-logo-mark" d="M104 112h48v32h-48z" opacity=".9"/>
+						<rect class="empty-logo-plate" width="256" height="256" rx="52"/>
+						<path class="empty-logo-glyph" d="M44 60h168v32h-28v84h20v24h-52V92H96v108H64V92H44V60Z"/>
+						<path class="empty-logo-mark" d="M116 112h16v16h16v16h-16v16h-16v-16h-16v-16h16v-16Z" opacity=".92"/>
 					</svg>
 					<div class="empty-wordmark">pi agent</div>
 					<p id="empty-detail" class="empty-detail">正在此工作区启动…</p>

@@ -14,9 +14,9 @@
 	   muddy. Fixed in both themes, and shared with `assets/pi-logo.png` — a
 	   marketplace icon is a static file that cannot follow the editor theme, so a
 	   theme-dependent mark would not match itself. */
-	--pi-logo-plate: #2ec4b6;
-	--pi-logo-ink: #12211f;
-	--pi-logo-mark: #f1f3f5;
+	--pi-logo-plate: #4f6ef7;
+	--pi-logo-ink: #111827;
+	--pi-logo-mark: #f8fafc;
 	--pi-page-background: var(
 		--vscode-sideBar-background,
 		var(--vscode-editor-background)
