@@ -10,7 +10,7 @@
 
 ## 预览
 
-![Pi Agent 侧边栏在 VS Code 辅助侧边栏中的样子](https://origin.picgo.net/2026/08/30/snapshot65fc55d47c1fd643.png)
+![Pi Agent 侧边栏在 VS Code 辅助侧边栏中的样子](assets/sidebar-preview.png)
 
 ## 环境要求
 
