@@ -108,6 +108,49 @@ The render pipeline ends with `stickToBottomIfFollowing()` then
 measures a half-written DOM and produces a one-frame jump. See
 [state-and-rendering.md](./state-and-rendering.md).
 
+## 6b. Reveal a completed live answer once, after playback and DOM writes
+
+- `RpcEventReducer` pairs `noteAgentStart()` with `noteAgentSettled()`; intermediate
+  assistant `message_end` events do not request a reveal.
+- `TranscriptController` captures existing message keys at run start and reuses
+  the rendered per-turn `turnAnswers()` keys and `turnOwners()` ordinals. Candidates
+  stay within the latest assistant turn even when a tool-heavy snapshot exceeds
+  the bounded identity-adoption window; a queued follow-up prompt does not change
+  that ownership. History and tool-only endings cannot select an older answer.
+  Aborted/error endings, session replacement and disconnect cancel the reveal;
+  a new run supersedes an unconsumed one.
+- Both the full render in `main.ts` and `renderStreamingFrame()` consume the pending
+  reveal only after playback is inactive, the final message is settled, and the
+  rendered DOM reflects process folding. Consumption is one-shot: repeated settled
+  events and authoritative snapshots cannot request another jump.
+- `viewport.revealAnswer()` cancels submit-follow recovery and scroll-settle work,
+  then supplies a lazy `.assistant-text` landing resolver to `anchor.revealTo()`.
+  At foreground start/resume it measures the clamped position with `adjustBy()`,
+  synchronizes the sticky prompt, and restores the start in the same task before
+  any paint. The destination leaves 8 px below the pinned prompt. A removed target
+  invalidates the request without moving the viewport.
+- `anchor.revealTo()` uses the existing scroll frame and cancellation path to ease
+  in and out over 240–650 ms according to travel distance, staying detached after
+  arrival. Every frame is recorded as programmatic and refreshes the pinned label
+  and jump button. Reduced motion lands immediately; short answers clamp to the
+  existing scroll range without adding padding.
+- Window blur and hidden visibility pause an active reveal or retain a new one
+  without measuring or moving it. Only a visible, focused webview resumes it,
+  remeasuring the landing and easing from the current position. Duplicate focus
+  events do not restart it; background layout scrolls do not discard the request.
+- Reader wheel, touch movement, scrolling keys and scrollbar input cancel the
+  pending or active motion. Ordinary pointer clicks and touch starts preserve it
+  so clicking back into the sidebar can resume the trip. New sends, runs, session
+  switches, disconnects and disclosure changes still clear obsolete requests.
+  Same-session snapshots do not restart the trip.
+- The reveal does not focus or blur anything. Later renders and image loads cannot
+  re-pin the bottom; the existing send flow or jump button can restore following.
+- Regressions live in `transcript-answer-reveal.test.mjs`,
+  `answer-reveal-animation.test.mjs`, `rpc-event-reducer.test.mjs`,
+  `viewport-gestures.test.mjs`, and the real-browser `webview-refactor-scenario.js`
+  fixture (background completion, pause/resume, remeasurement, cancellation,
+  intermediate travel, final alignment and keyboard focus).
+
 ## 7. Big first builds are staged tail-first
 
 [transcript/progressiveWindow.ts](../../../webview/transcript/progressiveWindow.ts),

@@ -13,6 +13,7 @@ async function setup(t) {
   streamingPlayback: { isActive: false, completeImmediately: () => undefined, start: (message) => message, resume: (message) => message, finish: effect("finish"), applyDelta: effect("delta"), updateTarget: effect("target") },
   streamingUsage: { startAgentRun: effect("run"), beginCall: effect("call"), applyUpdate: () => false, commitCall: () => false, addToolUsage: () => false },
   scheduleRender: effect("render"), scheduleTranscriptRender: effect("transcript"), scheduleAdvance: effect("advance"), renderRuntimeMeta: effect("usage"),
+  noteAgentStart: effect("agentStart"), noteAgentSettled: effect("agentSettled"),
   settleStreamingMessage: effect("settle"), noteUserMessage: effect("user"), hasEquivalentTail: (message) => ui.messages.at(-1) === message,
   refreshExpandedTool: effect("tool"), announce: effect("announce"), showToast: effect("toast"), friendlyToolName: (name) => name,
   setExtensionStatus: effect("status"), clearExtensionStatus: effect("clearStatus"), setExtensionWidget: effect("widget"),
@@ -83,4 +84,15 @@ test("tool results deduplicate and queue/status events keep their original effec
  assert.deepEqual(calls.at(-2), ["status", "retry", "Retrying (1/3)..."]);
  reducer.reduce({ type: "agent_settled" });
  assert.equal(ui.busy, false);
+});
+
+test("answer reveal lifecycle follows agent events, never intermediate message ends", async (t) => {
+ const { reducer, calls } = await setup(t);
+ reducer.reduce({ type: "agent_start" });
+ reducer.reduce({ type: "message_end", message: { role: "assistant", content: "working", stopReason: "toolUse" } });
+ assert.deepEqual(calls.filter(([name]) => name.startsWith("agent")), [["agentStart"]]);
+ reducer.reduce({ type: "message_end", message: { role: "assistant", content: "answer", stopReason: "stop" } });
+ assert.deepEqual(calls.filter(([name]) => name.startsWith("agent")), [["agentStart"]]);
+ reducer.reduce({ type: "agent_settled" });
+ assert.deepEqual(calls.filter(([name]) => name.startsWith("agent")), [["agentStart"], ["agentSettled"]]);
 });

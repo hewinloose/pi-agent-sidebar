@@ -56,13 +56,6 @@ export function activate(context: vscode.ExtensionContext): void {
 				);
 			}
 		}),
-		vscode.commands.registerCommand("piAgentSidebar.newTrellisTask", () =>
-			provider.createTrellisTask().catch((error: unknown) => {
-				void vscode.window.showWarningMessage(
-					error instanceof Error ? error.message : String(error),
-				);
-			}),
-		),
 		vscode.commands.registerCommand("piAgentSidebar.restart", () =>
 			provider.restart(),
 		),

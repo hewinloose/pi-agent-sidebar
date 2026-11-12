@@ -32,6 +32,8 @@ export interface RpcEventReducerOptions {
 	scheduleTranscriptRender(): void;
 	scheduleAdvance(): void;
 	renderRuntimeMeta(): void;
+	noteAgentStart(): void;
+	noteAgentSettled(): void;
 	settleStreamingMessage(message: PiMessage): void;
 	noteUserMessage(text: string): void;
 	hasEquivalentTail(message: PiMessage): boolean;
@@ -54,11 +56,13 @@ export class RpcEventReducer {
 		switch (event.type) {
 			case "agent_start":
 				options.ui.busy = true;
+				options.noteAgentStart();
 				options.announce("Pi started working");
 				options.streamingUsage.startAgentRun();
 				break;
 			case "agent_settled":
 				options.ui.busy = false;
+				options.noteAgentSettled();
 				options.announce("Pi finished responding");
 				break;
 			case "message_start":

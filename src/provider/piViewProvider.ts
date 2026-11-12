@@ -22,7 +22,6 @@ import {
 } from "./missedReplies.js";
 import { PiRpcClient } from "../rpc/piRpcClient.js";
 import { buildPrompt } from "../services/promptBuilder.js";
-import { TrellisTasks, trellisTaskPrompt } from "../services/trellisTasks.js";
 import {
 	parseCommandsResponse,
 	parseForkMessagesResponse,
@@ -185,7 +184,6 @@ export class PiViewProvider
 			(vscode.workspace.workspaceFolders ?? []).map((entry) => entry.uri.fsPath),
 		() => this.workspaceFolder?.uri.fsPath,
 	);
-	private readonly trellis = new TrellisTasks();
 
 	public constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -554,66 +552,6 @@ export class PiViewProvider
 			return true;
 		});
 	}
-
-	/**
-	 * Creates a Trellis task and hands requirement exploration to pi.
-	 *
-	 * The extension owns only the two facts a task cannot be created without —
-	 * title and request — and delegates everything else: the directory layout to
-	 * Trellis's own `task.py`, and the requirements conversation to pi.
-	 */
-	public async createTrellisTask(): Promise<void> {
-		const generation = this.workspaceGeneration;
-		const folder = await this.selectWorkspaceFolder();
-		if (!folder) throw new Error("请先打开一个工作区文件夹，才能新建 Trellis 任务。");
-		const root = folder.uri.fsPath;
-		if (!(await this.trellis.available(root)))
-			throw new Error("此工作区没有 Trellis 环境（缺少 .trellis/scripts/task.py）。");
-
-		const title = await vscode.window.showInputBox({
-			title: "新建 Trellis 任务",
-			prompt: "任务标题",
-			placeHolder: "例如：在输入区上方显示模型与上下文用量",
-			ignoreFocusOut: true,
-			validateInput: (value) => (value.trim() ? undefined : "请填写任务标题。"),
-		});
-		if (title === undefined) return;
-		const description = await vscode.window.showInputBox({
-			title: "新建 Trellis 任务",
-			prompt: "这个任务要改什么？Trellis 会用这段文字初始化 prd.md。",
-			placeHolder: "例如：在输入区上方显示模型和上下文用量",
-			ignoreFocusOut: true,
-			validateInput: (value) => (value.trim() ? undefined : "请填写任务需求。"),
-		});
-		if (description === undefined) return;
-
-		// The task belongs to the folder that was current when the dialogs opened; a
-		// workspace switch mid-flow must not write it into the old folder and then
-		// hand pi a relative path that resolves somewhere else.
-		if (generation !== this.workspaceGeneration)
-			throw new Error("工作区已切换，Trellis 任务未创建。");
-		const taskDir = await vscode.window.withProgress(
-			{
-				location: vscode.ProgressLocation.Notification,
-				title: "正在创建 Trellis 任务…",
-			},
-			() => this.trellis.create(root, title, description),
-		);
-		this.output.appendLine(`[trellis] Created ${taskDir}`);
-		if (generation !== this.workspaceGeneration) return;
-
-		await this.reveal();
-		const client = await this.ensureClient();
-		if (generation !== this.workspaceGeneration) return;
-		// Not a session mutation: the task exists regardless, and the prompt only
-		// starts the requirements conversation in whatever session is open.
-		await client.request({
-			type: "prompt",
-			message: trellisTaskPrompt(taskDir, title, description),
-			streamingBehavior: "followUp",
-		});
-	}
-
 
 	public async restart(): Promise<void> {
 		await this.startClient(true);

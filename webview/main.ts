@@ -344,6 +344,8 @@ const transcriptController = new TranscriptController({
 	pinToBottom: () => scrollAnchor.stickToBottomIfFollowing(),
 	syncJumpButton: syncJumpToBottomButton,
 	followFresh: () => scrollAnchor.follow({ snap: true }),
+	revealAnswer: (slot) => transcriptViewport.revealAnswer(slot),
+	cancelAnswerReveal: () => scrollAnchor.cancelReveal(),
 	clearMediaRefusals: () => mediaSources.clearRefusals(),
 	now: hostNow,
 });
@@ -1073,6 +1075,8 @@ const rpcEventReducer = new RpcEventReducer({
 	scheduleTranscriptRender: () => frameCoordinator.scheduleTranscriptRender(),
 	scheduleAdvance: () => frameCoordinator.scheduleAdvance(),
 	renderRuntimeMeta,
+	noteAgentStart: () => transcriptController.noteAgentStart(),
+	noteAgentSettled: () => transcriptController.noteAgentSettled(),
 	settleStreamingMessage: (message) => transcriptController.settle(message),
 	noteUserMessage: (text) => submitFollowCoordinator.noteUserMessage(text),
 	hasEquivalentTail: (message) => hasEquivalentTail(ui.messages, message),
@@ -1174,6 +1178,7 @@ function render(): void {
 	refreshRelativeTimes();
 	// Cheap when nothing is running: one query that returns no nodes.
 	refreshElapsedLabels();
+	transcriptController.revealSettledAnswer();
 	scrollAnchor.stickToBottomIfFollowing();
 	syncJumpToBottomButton();
 	scheduleTranscriptMeasure();

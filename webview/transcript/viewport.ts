@@ -3,6 +3,8 @@ import { PinnedPromptController } from "./pinnedPrompt.js";
 import { mountOverlayScrollbar } from "./overlayScrollbar.js";
 import type { FrameCoordinator } from "../ui/frameCoordinator.js";
 
+const ANSWER_REVEAL_GAP_PX = 8;
+
 export interface TranscriptViewportOptions {
  elements: {
   transcript: HTMLElement; messages: HTMLElement; transcriptFrame: HTMLElement;
@@ -29,6 +31,8 @@ export function createTranscriptViewport(options: TranscriptViewportOptions) {
   cancelFrame: (handle) => frames.cancelScrollFrame(handle),
   shouldAnimate: () => !reducedMotion.matches,
  });
+ let isWindowFocused = document.hasFocus();
+ if (document.hidden || !isWindowFocused) anchor.suspend();
  mountOverlayScrollbar({
   viewport: elements.transcript, content: elements.messages, frame: elements.transcriptFrame,
   onUserIntent: noteUserIntent, onDragStart: startScrollbarDrag, onDragEnd: finishScrollbarDrag,
@@ -71,13 +75,19 @@ export function createTranscriptViewport(options: TranscriptViewportOptions) {
   scheduleMeasure();
  }
  function resumeFollowing(): void {
-  if (document.hidden) return;
+  if (document.hidden || !isWindowFocused) return;
   if (anchor.resume()) options.scheduleRender();
   syncJumpButton();
   scheduleMeasure();
  }
- window.addEventListener("blur", () => anchor.suspend());
- window.addEventListener("focus", resumeFollowing);
+ window.addEventListener("blur", () => {
+  isWindowFocused = false;
+  anchor.suspend();
+ });
+ window.addEventListener("focus", () => {
+  isWindowFocused = true;
+  resumeFollowing();
+ });
  document.addEventListener("visibilitychange", () => {
   if (document.hidden) anchor.suspend();
   else resumeFollowing();
@@ -107,7 +117,9 @@ export function createTranscriptViewport(options: TranscriptViewportOptions) {
   const isDown = ["ArrowDown", "PageDown", "End"].includes(event.key) || (event.key === " " && !event.shiftKey);
   if (isUp || isDown) noteUserIntent(isUp ? -1 : 1);
  });
- elements.transcript.addEventListener("touchstart", (event) => { touchY = event.touches[0]?.clientY; }, { passive: true });
+ elements.transcript.addEventListener("touchstart", (event) => {
+  touchY = event.touches[0]?.clientY;
+ }, { passive: true });
  elements.transcript.addEventListener("touchmove", (event) => {
   const currentY = event.touches[0]?.clientY;
   if (currentY === undefined || touchY === undefined) return;
@@ -130,5 +142,32 @@ export function createTranscriptViewport(options: TranscriptViewportOptions) {
  });
  elements.pinnedPromptBody.addEventListener("click", () => pinnedPrompt.revealActivePrompt());
  elements.pinnedPromptToggle.addEventListener("click", () => pinnedPrompt.toggleExpanded());
- return { anchor, syncJumpButton, scheduleMeasure, measure: () => pinnedPrompt.sync() };
+ function syncRevealFrame(): void {
+  pinnedPrompt.sync();
+  syncJumpButton();
+  scheduleMeasure();
+ }
+ /** Defer sticky-label measurement until the webview can paint the reveal. */
+ function revealAnswer(slot: Element): void {
+  const target = slot.querySelector<HTMLElement>(".assistant-text");
+  if (!target) return;
+  options.cancelSubmitFollow();
+  if (scrollTimer !== undefined) clearTimeout(scrollTimer);
+  scrollTimer = undefined;
+  anchor.revealTo(() => {
+   if (!target.isConnected) return Number.NaN;
+   const start = elements.transcript.scrollTop;
+   const top = elements.transcript.getBoundingClientRect().top;
+   anchor.adjustBy(target.getBoundingClientRect().top - top);
+   pinnedPrompt.sync();
+   const promptBottom = elements.pinnedPrompt.hidden ? top : elements.pinnedPrompt.getBoundingClientRect().bottom;
+   anchor.adjustBy(target.getBoundingClientRect().top - Math.max(top, promptBottom) - ANSWER_REVEAL_GAP_PX);
+   const destination = elements.transcript.scrollTop;
+   // Measure and restore in one task so only the smooth trip is painted.
+   anchor.adjustBy(start - destination);
+   syncRevealFrame();
+   return destination;
+  }, syncRevealFrame);
+ }
+ return { anchor, revealAnswer, syncJumpButton, scheduleMeasure, measure: () => pinnedPrompt.sync() };
 }

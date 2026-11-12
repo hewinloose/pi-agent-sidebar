@@ -42,10 +42,11 @@ test("transcript gestures preserve reader ownership across pointer, keyboard and
    timers.clear();
    for (const callback of callbacks) callback();
   };
+  let reduceMotion = true;
   const globals = {
    Element: FakeElement,
-   window: Object.assign(new EventTarget(), { matchMedia: () => ({ matches: true }) }),
-   document: Object.assign(new EventTarget(), { hidden: false, createElement: () => new FakeElement() }),
+   window: Object.assign(new EventTarget(), { matchMedia: () => ({ get matches() { return reduceMotion; } }) }),
+   document: Object.assign(new EventTarget(), { hidden: false, hasFocus: () => false, createElement: () => new FakeElement() }),
    ResizeObserver: class { observe() {} },
   };
   for (const [name, value] of Object.entries(globals)) {
@@ -61,12 +62,35 @@ test("transcript gestures preserve reader ownership across pointer, keyboard and
    "pinnedPromptText", "pinnedPromptToggle", "pinnedPromptBody",
   ].map((name) => [name, new FakeElement()]));
   let cancellations = 0;
-  const { anchor } = loaded.module.createTranscriptViewport({
+  const scrollFrames = new Map();
+  let nextScrollFrame = 0;
+  let frameTime = 0;
+  const advanceScrollFrame = () => {
+   const callbacks = [...scrollFrames.values()];
+   scrollFrames.clear();
+   frameTime += 1000 / 60;
+   for (const callback of callbacks) callback(frameTime);
+   elements.transcript.dispatchEvent(new Event("scroll"));
+  };
+  const finishScrollFrames = () => {
+   let count = 0;
+   while (scrollFrames.size && count++ < 100) advanceScrollFrame();
+   assert.equal(scrollFrames.size, 0);
+  };
+  const { anchor, revealAnswer } = loaded.module.createTranscriptViewport({
    elements,
-   frames: { requestScrollFrame: () => 1, cancelScrollFrame() {}, scheduleMeasure() {} },
+   frames: {
+    requestScrollFrame: (callback) => { scrollFrames.set(++nextScrollFrame, callback); return nextScrollFrame; },
+    cancelScrollFrame: (id) => scrollFrames.delete(id), scheduleMeasure() {},
+   },
    scheduleRender() {},
    cancelSubmitFollow: () => { cancellations += 1; },
   });
+  anchor.revealTo(300);
+  assert.equal(elements.transcript.scrollTop, 600, "an initially unfocused webview retains its reveal");
+  window.dispatchEvent(new Event("focus"));
+  assert.equal(elements.transcript.scrollTop, 300);
+  anchor.follow();
   anchor.stickToBottomIfFollowing();
   for (const button of [0, 2]) {
    pointerDown(elements.transcript, button);
@@ -198,5 +222,169 @@ test("transcript gestures preserve reader ownership across pointer, keyboard and
     }
    }
   }
+  // Geometry is read from the real viewport offsets; the sticky label appears
+  // only after the first alignment has moved this prompt above the top edge.
+  const promptText = { textContent: "question", cloneNode: () => ({ childNodes: [], querySelectorAll: () => [] }) };
+  elements.messages.querySelectorAll = () => [{
+   getBoundingClientRect: () => ({ top: 40 - elements.transcript.scrollTop, bottom: 80 - elements.transcript.scrollTop }),
+   querySelector: () => promptText,
+  }];
+  elements.transcript.getBoundingClientRect = () => ({ top: 40, bottom: 440 });
+  elements.pinnedPrompt.getBoundingClientRect = () => ({ top: 40, bottom: 80 });
+  elements.pinnedPromptText.replaceChildren = () => {};
+  elements.pinnedPromptToggle.setAttribute = () => {};
+  let answerOffset = 600;
+  let answerMeasurements = 0;
+  const answer = { isConnected: true, getBoundingClientRect: () => {
+   answerMeasurements += 1;
+   return { top: 40 + answerOffset - elements.transcript.scrollTop };
+  } };
+  const slot = { querySelector: (selector) => selector === ".assistant-text" ? answer : null };
+  elements.transcript.scrollHeight = 1800;
+  anchor.follow({ smooth: true });
+  const beforeReveal = cancellations;
+  revealAnswer(slot);
+  assert.equal(cancellations, beforeReveal + 1, "answer reveal cancels delayed submit following");
+  assert.equal(anchor.isFollowing, false);
+  assert.equal(elements.transcript.scrollTop, 552);
+  assert.equal(answer.getBoundingClientRect().top, 88, "answer starts below the sticky prompt and gap");
+  elements.transcript.scrollHeight += 200;
+  assert.equal(anchor.stickToBottomIfFollowing(), false, "later image/layout growth cannot pin the bottom");
+  assert.equal(elements.transcript.scrollTop, 552);
+  window.dispatchEvent(new Event("focus"));
+  flushTimers();
+  assert.equal(elements.transcript.scrollTop, 552, "focus recovery does not undo the reveal");
+  answerOffset = 750;
+  elements.transcript.scrollHeight = 1000;
+  anchor.follow();
+  anchor.stickToBottomIfFollowing();
+  revealAnswer(slot);
+  assert.equal(elements.transcript.scrollTop, 600, "short answers clamp without blank padding");
+  assert.equal(anchor.isFollowing, false, "even a clamped reveal leaves follow-bottom detached");
+  anchor.follow({ smooth: true });
+  assert.equal(anchor.isFollowing, true, "the next submit can restore following");
+  revealAnswer({ querySelector: () => null });
+  assert.equal(anchor.isFollowing, true, "a missing answer has no scroll side effects");
+
+  reduceMotion = false;
+  elements.transcript.scrollHeight = 1800;
+  answerOffset = 600;
+  elements.transcript.scrollTop = 1000;
+  revealAnswer(slot);
+  assert.equal(elements.transcript.scrollTop, 1000, "endpoint measurement is restored before painting");
+  assert.ok(scrollFrames.size > 0);
+  for (let index = 0; index < 7; index += 1) advanceScrollFrame();
+  assert.ok(elements.transcript.scrollTop < 1000 && elements.transcript.scrollTop > 552, "the viewport travels through intermediate positions");
+  finishScrollFrames();
+  assert.ok(Math.abs(elements.transcript.scrollTop - 552) <= 1, "animation keeps the sticky-label landing");
+  assert.equal(anchor.isFollowing, false);
+
+  for (const gesture of ["wheel", "keyboard", "touch", "scrollbar"]) {
+   elements.transcript.scrollTop = 1000;
+   revealAnswer(slot);
+   for (let index = 0; index < 7; index += 1) advanceScrollFrame();
+   if (gesture === "wheel") {
+    const event = new Event("wheel");
+    Object.assign(event, { deltaY: -20 });
+    elements.transcript.dispatchEvent(event);
+   } else if (gesture === "keyboard") {
+    const event = new Event("keydown");
+    Object.assign(event, { key: "PageUp" });
+    elements.transcript.dispatchEvent(event);
+   } else if (gesture === "scrollbar") pointerDown(thumb);
+   else {
+    for (const [type, clientY] of [["touchstart", 100], ["touchmove", 120]]) {
+     const event = new Event(type);
+     Object.assign(event, { touches: [{ clientY }] });
+     elements.transcript.dispatchEvent(event);
+    }
+   }
+   const readerTop = elements.transcript.scrollTop;
+   finishScrollFrames();
+   assert.equal(elements.transcript.scrollTop, readerTop, `${gesture} stops the live animation`);
+   if (gesture === "scrollbar") pointerEvent(thumb, "pointerup");
+   flushTimers();
+  }
+
+  for (const reduced of [false, true]) {
+   reduceMotion = reduced;
+   for (const phase of ["before completion", "during animation"]) {
+    if (reduced && phase === "during animation") continue;
+    for (const leave of ["blur", "hidden", "blur and hidden"]) {
+     for (const gesture of ["none", "pointer", "touchstart", "wheel", "keyboard", "touchmove", "scrollbar"]) {
+      answerOffset = 600;
+      elements.transcript.scrollTop = 1000;
+      if (phase === "during animation") {
+       revealAnswer(slot);
+       for (let index = 0; index < 7; index += 1) advanceScrollFrame();
+      }
+      if (leave.includes("blur")) window.dispatchEvent(new Event("blur"));
+      if (leave.includes("hidden")) {
+       document.hidden = true;
+       document.dispatchEvent(new Event("visibilitychange"));
+      }
+      const measurementsBefore = answerMeasurements;
+      const pausedAt = elements.transcript.scrollTop;
+      if (phase === "before completion") revealAnswer(slot);
+      finishScrollFrames();
+      assert.equal(elements.transcript.scrollTop, pausedAt, "inactive reveals do not move");
+      assert.equal(answerMeasurements, measurementsBefore, "inactive reveals do not measure geometry");
+      // Model layout changes without a reader gesture while the webview is inactive.
+      answerOffset = 700;
+      elements.transcript.scrollTop = 900;
+      elements.transcript.dispatchEvent(new Event("scroll"));
+      if (gesture === "pointer") pointerDown(elements.transcript);
+      else if (["touchstart", "touchmove"].includes(gesture)) {
+       for (const [type, clientY] of [["touchstart", 100], ...(gesture === "touchmove" ? [["touchmove", 120]] : [])]) {
+        const event = new Event(type);
+        Object.assign(event, { touches: [{ clientY }] });
+        elements.transcript.dispatchEvent(event);
+       }
+      } else if (gesture === "wheel") {
+       const event = new Event("wheel");
+       Object.assign(event, { deltaY: -20 });
+       elements.transcript.dispatchEvent(event);
+      } else if (gesture === "keyboard") {
+       const event = new Event("keydown");
+       Object.assign(event, { key: "PageDown" });
+       elements.transcript.dispatchEvent(event);
+      } else if (gesture === "scrollbar") {
+       pointerDown(thumb);
+       pointerEvent(thumb, "pointermove", 90);
+       pointerEvent(thumb, "pointerup", 90);
+      }
+      const readerTop = elements.transcript.scrollTop;
+      if (leave.includes("hidden")) {
+       document.hidden = false;
+       document.dispatchEvent(new Event("visibilitychange"));
+       if (leave.includes("blur")) assert.equal(scrollFrames.size, 0, "visible but blurred still waits for focus");
+      }
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("focus"));
+      const cancelled = ["wheel", "keyboard", "touchmove", "scrollbar"].includes(gesture);
+      if (!reduced || cancelled) assert.equal(elements.transcript.scrollTop, readerTop, "focus does not teleport");
+      finishScrollFrames();
+      flushTimers();
+      const label = `${reduced}/${phase}/${leave}/${gesture}`;
+      if (cancelled) {
+       assert.equal(elements.transcript.scrollTop, readerTop, label);
+       assert.equal(answerMeasurements, measurementsBefore, "cancelled targets are not measured on focus");
+      } else {
+       assert.ok(Math.abs(elements.transcript.scrollTop - 652) <= 1, `${label}: focus uses the latest sticky-label landing`);
+       assert.ok(answerMeasurements > measurementsBefore);
+      }
+      assert.equal(anchor.isFollowing, false, label);
+     }
+    }
+   }
+  }
+  reduceMotion = false;
+  window.dispatchEvent(new Event("blur"));
+  revealAnswer(slot);
+  answer.isConnected = false;
+  const disconnectedTop = elements.transcript.scrollTop;
+  window.dispatchEvent(new Event("focus"));
+  finishScrollFrames();
+  assert.equal(elements.transcript.scrollTop, disconnectedTop, "removed answers cannot replay a stale reveal");
  } finally { await loaded.dispose(); }
 });

@@ -6,7 +6,6 @@ const expectedCommands = [
 	"piAgentSidebar.open",
 	"piAgentSidebar.focusInput",
 	"piAgentSidebar.newSession",
-	"piAgentSidebar.newTrellisTask",
 	"piAgentSidebar.restart",
 	"piAgentSidebar.showLogs",
 	"piAgentSidebar.renameSession",
@@ -25,8 +24,7 @@ test("manifest preserves public command IDs and selection keybindings", async ()
 	);
 	assert.deepEqual(keybinding, {
 		command: "piAgentSidebar.focusInput",
-		key: "ctrl+escape",
-		mac: "cmd+escape",
+		key: "ctrl+tab",
 		when: "editorTextFocus",
 	});
 	assert.deepEqual(manifest.contributes.menus["explorer/context"], [

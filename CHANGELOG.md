@@ -1,6 +1,17 @@
 ﻿# Changelog
 
 ## Unreleased
+- Remove the New Trellis Task command and its task-creation service from the
+  extension. Project-local Trellis tasks and pi's Trellis resources are unchanged.
+- Change Add to Pi Agent Composer's default editor shortcut to `Ctrl+Tab` on every
+  platform. Selection references and focus-only behavior remain the same.
+- Smoothly reveal the beginning of a live run's final answer once its buffered
+  text has finished displaying, below the pinned prompt. The motion eases in and
+  out over 240–650 ms and respects reduced motion. Losing focus pauses and retains
+  the request; focus remeasures the destination and resumes from the current
+  position. Normal clicks preserve it, while manual scrolling cancels it.
+  Later refreshes keep the reading position, keyboard focus stays put, and the
+  next send resumes following output.
 - The editor context menu carries **Add to Pi Agent Composer** at the
   top level instead of hiding it behind a **Pi Agent** submenu. The submenu is
   gone along with the five preset prompts it held (explain selection, explain

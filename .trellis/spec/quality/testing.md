@@ -108,7 +108,7 @@ received (`sanitizer-policy.test.mjs`).
 - **Integration:** deliberately end-to-end.
   - [manifest.test.mjs](../../../test/integration/manifest.test.mjs) reads
     `package.json` and source files **as text** and pins user-facing contracts:
-    the exact command-id list, the `ctrl+escape` / `cmd+escape` keybinding, menu
+    the exact command-id list, the `ctrl+tab` keybinding on every platform, menu
     `when` clauses, and structural HTML/CSS invariants (the pinned-prompt rail
     lives inside `#transcript`; `.pinned-prompt-slot` is
     `position: sticky; height: 0`).

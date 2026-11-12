@@ -78,6 +78,8 @@ async function harness() {
 		pinToBottom: () => anchor.stickToBottomIfFollowing(),
 		syncJumpButton() {},
 		followFresh: () => anchor.follow({ snap: true }),
+		revealAnswer() {},
+		cancelAnswerReveal: () => anchor.cancelReveal(),
 		clearMediaRefusals() {},
 		now: () => 1_000,
 	});

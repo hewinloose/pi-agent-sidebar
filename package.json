@@ -57,11 +57,6 @@
         "icon": "$(add)"
       },
       {
-        "command": "piAgentSidebar.newTrellisTask",
-        "title": "Pi Agent: 新建 Trellis 任务",
-        "icon": "$(checklist)"
-      },
-      {
         "command": "piAgentSidebar.restart",
         "title": "Pi Agent: 重启运行时",
         "icon": "$(refresh)"
@@ -117,8 +112,7 @@
     "keybindings": [
       {
         "command": "piAgentSidebar.focusInput",
-        "key": "ctrl+escape",
-        "mac": "cmd+escape",
+        "key": "ctrl+tab",
         "when": "editorTextFocus"
       }
     ],

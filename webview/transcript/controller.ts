@@ -78,6 +78,8 @@ export interface TranscriptControllerOptions {
  pinToBottom(): void;
  syncJumpButton(): void;
  followFresh(): void;
+ revealAnswer(slot: Element): void;
+ cancelAnswerReveal(): void;
  clearMediaRefusals(): void;
  now(): number;
 }
@@ -95,6 +97,8 @@ export class TranscriptController {
  private context: MessageRenderContext | undefined;
  private turnProcessByKey: ReadonlyMap<string, TurnProcessView> = new Map();
  private readonly limit = 150;
+ private renderedAnswerKeys: ReadonlySet<string> = new Set();
+ private answerReveal: { previousKeys: ReadonlySet<string>; settled: boolean } | undefined;
 
  constructor(private readonly options: TranscriptControllerOptions) {
   this.playback = new StreamingMessagePlayback();
@@ -108,6 +112,49 @@ export class TranscriptController {
  }
 
  messageKey(message: PiMessage): string { return `message-${this.identity(message).key}`; }
+
+ /** Capture the live run's boundary so history and tool-only turns cannot reveal an old answer. */
+ noteAgentStart(): void {
+  this.options.cancelAnswerReveal();
+  const { messages, streamingMessage } = this.options.state;
+  const previousKeys = new Set(messages.map((message) => this.messageKey(message)));
+  if (streamingMessage) previousKeys.add(this.messageKey(streamingMessage));
+  this.answerReveal = { previousKeys, settled: false };
+ }
+
+ noteAgentSettled(): void {
+  if (this.answerReveal) this.answerReveal.settled = true;
+ }
+
+ /**
+  * Consume once, after DOM writes and buffered playback, using the same per-turn
+  * answer keys as the action row. Session replacement and interruption cancel it;
+  * snapshots adopt the keys, so repeated completion events cannot reveal again.
+  */
+ revealSettledAnswer(): void {
+  const pending = this.answerReveal;
+  const { state } = this.options;
+  if (!pending?.settled || this.playback.isActive || state.streamingMessage) return;
+  this.answerReveal = undefined;
+  const owners = this.turnOwners().ordinals;
+  let answerTurn: number | undefined;
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+   const message = state.messages[index];
+   if (!message || message.role !== "assistant") continue;
+   const key = this.messageKey(message);
+   // Snapshot identity adoption is bounded; never fall back across prompt turns.
+   const turn = owners.get(key);
+   answerTurn ??= turn;
+   if (turn !== answerTurn) return;
+   if (pending.previousKeys.has(key)) continue;
+   // A failed final step must not fall back to an earlier answer from this run.
+   if (message.stopReason === "aborted" || message.stopReason === "error") return;
+   if (!this.renderedAnswerKeys.has(key)) continue;
+   const slot = this.view.nodeFor(key);
+   if (slot) this.options.revealAnswer(slot);
+   return;
+  }
+ }
 
 
 /**
@@ -159,6 +206,10 @@ copyTextFor(messageKey: string): string | undefined {
 
  reconcileSnapshot(sessionChanged: boolean, isStreaming: boolean): void {
   const { state } = this.options;
+  if (sessionChanged) {
+   this.answerReveal = undefined;
+   this.options.cancelAnswerReveal();
+  }
   const live = state.streamingMessage;
   const finishing = this.playback.isFinishing;
   let listed: PiMessage | undefined;
@@ -215,6 +266,8 @@ copyTextFor(messageKey: string): string | undefined {
  }
 
  interrupt(detail?: string): void {
+  this.options.cancelAnswerReveal();
+  this.answerReveal = undefined;
   const active = this.playback.completeImmediately() ?? this.options.state.streamingMessage;
   if (active) this.settle({ ...active, stopReason: "aborted" });
   for (const tool of this.liveTools.values()) {
@@ -232,6 +285,7 @@ copyTextFor(messageKey: string): string | undefined {
   const key = message && this.messageKey(message);
   const slot = key && this.view.nodeFor(key);
   if (!message || !key || !slot || !this.options.patchStreaming(slot, message, this.toolResults, key)) this.render();
+  this.revealSettledAnswer();
   this.options.pinToBottom();
   this.options.syncJumpButton();
  }
@@ -268,6 +322,7 @@ copyTextFor(messageKey: string): string | undefined {
   entries.push({ key, signature: `${messageRenderSignature(message, this.toolResults, this.liveTools, message === streaming, this.signature)}|ts${epoch ?? "-"}|tp${turnProcessSignature(turnProcess.get(key))}|ans${answerKeys.has(key) ? 1 : 0}|gap${afterStepKeys.has(key) ? 1 : 0}` });
   }
   this.turnProcessByKey = turnProcess;
+  this.renderedAnswerKeys = answerKeys;
   this.context = { byKey, omitted, resultMap: this.toolResults, separatorLabels, promptOrdinals: owners.ordinals, turnProcess, answerKeys, afterStepKeys };
   try { this.view.update(entries); } finally { this.context = undefined; }
   if (visible.length < capped.length) this.options.scheduleRender();

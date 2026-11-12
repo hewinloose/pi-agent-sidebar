@@ -29,7 +29,7 @@ test("webview boots, streams, switches sessions and handles session/composer UI 
  html = html.replace(/<body([^>]*)>/u, (_match, attributes) => `<body${attributes}><script nonce="${nonce}">${scenario}</script>`);
  const file = path.join(directory, "index.html");
  await writeFile(file, html);
- const { stdout } = await run(chrome, ["--headless=new", "--no-sandbox", "--disable-gpu", "--allow-file-access-from-files", "--virtual-time-budget=12000", "--dump-dom", pathToFileURL(file).href], { timeout: 60000, maxBuffer: 8 * 1024 * 1024 });
+ const { stdout } = await run(chrome, ["--headless=new", "--no-sandbox", "--disable-gpu", "--allow-file-access-from-files", "--virtual-time-budget=24000", "--dump-dom", pathToFileURL(file).href], { timeout: 60000, maxBuffer: 8 * 1024 * 1024 });
  const failure = /data-test-error="([^"]*)"/u.exec(stdout)?.[1];
  assert.equal(failure, undefined, failure);
  assert.match(stdout, /data-test-complete="true"/u, "the real webview must complete its handshake and scenario");

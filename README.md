@@ -64,6 +64,12 @@ pi
 - Persistent history with search, switching, rename, delete, and new sessions.
 - The session last used in a workspace is restored after a VS Code reload.
 - Export any session to a self-contained HTML file.
+- Once a live run's final answer has fully appeared, the transcript smoothly
+  scrolls to its beginning below the pinned prompt. Losing focus pauses and retains
+  the request; returning to the sidebar remeasures and smoothly resumes it. Normal
+  clicks preserve it, while manual scrolling cancels it. Reduced-motion preferences
+  use an immediate reveal on focus. Keyboard focus stays where it was; sending the
+  next prompt resumes following the output.
 - Sessions live where pi puts them (`~/.pi/agent/sessions` by default), so the CLI
   and the sidebar see the same history — and `piAgentSidebar.sessionDirectory`
   moves both together.
@@ -100,7 +106,6 @@ pi
 | Pi Agent: Open | Reveal the sidebar |
 | Add to Pi Agent Composer | Open, focus the composer, insert the selection reference |
 | Pi Agent: New Session | Start a fresh session |
-| Pi Agent: New Trellis Task | Create a Trellis task through `.trellis/scripts/task.py` when the workspace has a Trellis layout |
 | Pi Agent: Rename Session | Rename the current session |
 | Pi Agent: Export Session to HTML | Write the current session out as a standalone page |
 | Pi Agent: Add Files or Folders to Input | Attach Explorer selections to the composer |
@@ -112,15 +117,15 @@ pi
 
 ## Keyboard shortcut
 
-Select code, then press `Cmd+Esc` (macOS) or `Ctrl+Esc` (Windows / Linux). The
+Select code in the editor, then press `Ctrl+Tab` on any platform. The
 sidebar opens, the composer focuses, and an inline reference such as
 `@src/file.ts#10-14` is inserted at the caret while the selected text itself
 travels along as code context. Delete the reference to detach it; `Cmd`/`Ctrl`-click
 it or press `F12` inside it to jump back. With no selection, the shortcut only
 focuses the composer.
 
-Other AI extensions may claim the same chord — reassign **Pi Agent: Focus Input
-with Selection** in VS Code's Keyboard Shortcuts editor if it conflicts.
+If a custom keybinding or another extension takes precedence, reassign **Add to
+Pi Agent Composer** in VS Code's Keyboard Shortcuts editor.
 
 ## Configuration
 

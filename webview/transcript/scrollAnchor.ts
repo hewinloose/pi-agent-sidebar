@@ -54,6 +54,8 @@ const DEFAULT_FRAME_DURATION_MS = 1000 / 60;
 const MAX_FRAME_DURATION_MS = 50;
 const SMOOTH_SCROLL_TIME_CONSTANT_MS = 80;
 const SMOOTH_SCROLL_SETTLE_PX = 0.5;
+const REVEAL_MIN_DURATION_MS = 240;
+const REVEAL_MAX_DURATION_MS = 650;
 
 /**
  * Slack allowed when recognising our own scroll position again. Setting
@@ -73,6 +75,10 @@ export class ScrollAnchor {
 	private animationFrame: number | undefined;
 	private animationTargetScrollTop: number | undefined;
 	private previousFrameTime: number | undefined;
+	private revealAnimation: {
+		target: number | (() => number);
+		from: number; to: number; duration: number; elapsed: number; onFrame?: () => void;
+	} | undefined;
 	private lastDistanceFromBottom: number | undefined;
 	private lastScrollTop: number | undefined;
 	private readerControlsViewport = false;
@@ -102,15 +108,25 @@ export class ScrollAnchor {
 		return scrollHeight - scrollTop - clientHeight;
 	}
 
-	/** Preserve follow intent across background layout changes, not reader gestures. */
+	/** Preserve pending reveal and follow intent while the webview is inactive. */
 	public suspend(): void {
 		this.isInactive = true;
+		if (this.revealAnimation) {
+			// Stop frames, not the request: focus will remeasure its target and restart.
+			if (this.animationFrame !== undefined) this.options.cancelFrame?.(this.animationFrame);
+			this.animationFrame = undefined;
+			this.previousFrameTime = undefined;
+		}
 	}
 
 	/** Returns whether a foreground render is needed to restore the bottom. */
 	public resume(): boolean {
 		if (!this.isInactive) return false;
 		this.isInactive = false;
+		if (this.revealAnimation) {
+			this.startReveal();
+			return false;
+		}
 		if (!this.following) return false;
 		this.follow({ immediate: true });
 		return true;
@@ -170,6 +186,9 @@ export class ScrollAnchor {
 	 * already up to date inside a scroll handler and so force no extra layout.
 	 */
 	public noteScroll(): boolean {
+		// Background layout/clamping is not a reader gesture. Explicit input still
+		// cancels the request through noteUserIntent before its scroll event arrives.
+		if (this.isInactive && this.revealAnimation) return false;
 		// Explicit input still detaches before a background or pending-pin scroll.
 		if (this.following && (this.isInactive || this.isImmediatePinPending || this.isSmoothFollowPending)) return false;
 		const { scrollTop } = this.options.viewport;
@@ -318,6 +337,20 @@ export class ScrollAnchor {
 		return true;
 	}
 
+	/** Eases to a measured reading position without restoring bottom following. */
+	public revealTo(target: number | (() => number), onFrame?: () => void): void {
+		this.detach();
+		this.revealAnimation = {
+			target, from: 0, to: 0, elapsed: 0, duration: REVEAL_MIN_DURATION_MS, onFrame,
+		};
+		this.startReveal();
+	}
+
+	/** Stops only the reading-position animation; ordinary streaming is unaffected. */
+	public cancelReveal(): void {
+		if (this.revealAnimation) this.cancelAnimation();
+	}
+
 	/**
 	 * Forces following again, for actions that imply "show me the latest".
 	 *
@@ -396,6 +429,32 @@ export class ScrollAnchor {
 		return true;
 	}
 
+	/** Resolve at foreground start/resume because background DOM geometry may change. */
+	private startReveal(): void {
+		const animation = this.revealAnimation;
+		if (!animation || this.isInactive) return;
+		const requested = typeof animation.target === "function" ? animation.target() : animation.target;
+		if (!Number.isFinite(requested)) {
+			this.cancelReveal();
+			return;
+		}
+		const { viewport } = this.options;
+		animation.from = viewport.scrollTop;
+		animation.to = Math.max(0, Math.min(requested, viewport.scrollHeight - viewport.clientHeight));
+		const distance = Math.abs(animation.to - animation.from);
+		if (!this.canAnimate() || distance <= PROGRAMMATIC_TOLERANCE_PX) {
+			this.adjustBy(animation.to - viewport.scrollTop);
+			this.cancelAnimation();
+			animation.onFrame?.();
+			return;
+		}
+		animation.elapsed = 0;
+		animation.duration = Math.min(REVEAL_MAX_DURATION_MS, Math.max(REVEAL_MIN_DURATION_MS, Math.sqrt(distance) * 12));
+		this.expectedScrollTop = viewport.scrollTop;
+		this.previousFrameTime = undefined;
+		this.scheduleAnimationFrame();
+	}
+
 	private canAnimate(): boolean {
 		return Boolean(
 			this.options.requestFrame &&
@@ -411,6 +470,10 @@ export class ScrollAnchor {
 
 	private readonly stepAnimation: FrameRequestCallback = (timestamp) => {
 		this.animationFrame = undefined;
+		if (this.revealAnimation) {
+			this.advanceReveal(timestamp);
+			return;
+		}
 		const targetScrollTop = this.animationTargetScrollTop;
 		if (!this.following || targetScrollTop === undefined) return;
 
@@ -436,6 +499,28 @@ export class ScrollAnchor {
 		if (this.advanceAnimation(frameDuration)) return;
 		this.scheduleAnimationFrame();
 	};
+
+	/** Shares the follow animation's frame and cancellation path, but stays detached. */
+	private advanceReveal(timestamp: number): void {
+		const animation = this.revealAnimation;
+		if (!animation || this.isInactive) return;
+		const { viewport } = this.options;
+		if (!this.isAtExpectedScrollTop(viewport.scrollTop)) {
+			this.cancelAnimation();
+			return;
+		}
+		const delta = Math.min(this.previousFrameTime === undefined
+			? DEFAULT_FRAME_DURATION_MS : Math.max(0, timestamp - this.previousFrameTime), MAX_FRAME_DURATION_MS);
+		this.previousFrameTime = timestamp;
+		animation.elapsed = this.canAnimate() ? Math.min(animation.duration, animation.elapsed + delta) : animation.duration;
+		const progress = animation.elapsed / animation.duration;
+		// A gentle start and stop makes the travel readable, with no overshoot.
+		const eased = progress < 0.5 ? 4 * progress ** 3 : 1 - (-2 * progress + 2) ** 3 / 2;
+		this.adjustBy(animation.from + (animation.to - animation.from) * eased - viewport.scrollTop);
+		if (progress === 1) this.cancelAnimation();
+		animation.onFrame?.();
+		if (this.revealAnimation) this.scheduleAnimationFrame();
+	}
 
 	/** Advances toward the current target and reports whether it settled. */
 	private advanceAnimation(frameDuration: number): boolean {
@@ -470,6 +555,7 @@ export class ScrollAnchor {
 		}
 		this.animationFrame = undefined;
 		this.animationTargetScrollTop = undefined;
+		this.revealAnimation = undefined;
 		this.previousFrameTime = undefined;
 		this.absorbedUnexpectedCount = 0;
 	}

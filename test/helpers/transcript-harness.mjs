@@ -36,6 +36,8 @@ export async function transcriptHarness(t) {
   patchStreaming: () => undefined,
   scheduleRender: () => effects.push("render"), scheduleMeasure: () => effects.push("measure"),
   pinToBottom: () => effects.push("pin"), syncJumpButton: () => effects.push("jump"),
+  revealAnswer: (slot) => effects.push(["reveal", slot]),
+  cancelAnswerReveal: () => effects.push("cancel-reveal"),
   followFresh: () => effects.push("follow"), clearMediaRefusals: () => effects.push("media"), now: () => 1000,
  });
  return { controller, state, children, builds, effects };
