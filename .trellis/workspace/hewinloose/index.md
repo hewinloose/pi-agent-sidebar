@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-11-11
+- **Total Sessions**: 9
+- **Last Active**: 2026-11-12
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~308 | Active |
+| `journal-1.md` | ~340 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-11-12 | Editor shortcut and focus-aware answer reveal | `6ca4381` | `main` |
 | 8 | 2026-11-11 | 编辑器右键菜单只保留聚焦输入框 | `bc6fb30`, `356d83b` | `main` |
 | 7 | 2026-11-06 | 轮次折叠的三处体验修正 | `7987dfb` | `main` |
 | 6 | 2026-11-06 | 审核跟进：只有步骤才取消回答前的间距 | `be35d53` | `main` |

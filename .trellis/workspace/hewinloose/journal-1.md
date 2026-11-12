@@ -306,3 +306,35 @@ Icon row actions (lucide + zh-CN copy) under the bubble instead of inside it; re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: Editor shortcut and focus-aware answer reveal
+<!-- trellis-session: v=2 fp=cb43fa57a8d7590c -->
+
+**Date**: 2026-11-12
+**Task**: Editor shortcut and focus-aware answer reveal
+**Branch**: `main`
+
+### Summary
+
+Removed the extension Trellis task command, changed composer entry to Ctrl+Tab, and added one-shot smooth completed-answer positioning with pause/resume across focus changes. No active Trellis task existed, so task archival was skipped.
+
+### Main Changes
+
+- Keep pending answer positioning while unfocused, remeasure and resume on focus, preserve ordinary clicks and keyboard focus, and cancel for manual scrolling or obsolete runs.
+- Added controller, animation, gesture and real-Chrome regressions; updated READMEs, changelog, scroll specification and approved plan.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6ca4381` | feat: streamline editor actions and reveal completed answers |
+
+### Testing
+
+- [OK] npm run verify: 483 tests, 481 passed, 0 failed, 2 POSIX-only skips; typecheck and reproducible production build passed.
+- [OK] npm run package passed; forced local VS Code installation and verified dairycode.pi-sidebar@1.0.3; git diff --check passed. Three pre-existing CSS syntax warnings remain.
+
+### Status
+
+[OK] **Completed**
