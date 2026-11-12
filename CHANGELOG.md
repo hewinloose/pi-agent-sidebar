@@ -120,6 +120,11 @@
   message rather than inside it — a reply's row on its left edge, the reader's
   own on the right — and the edit dialog reads 编辑并重新发送 · 重试 · 取消.
 
+## 1.0.6
+
+- Update the preview screenshot in the English and Chinese READMEs and bundle it
+  as `assets/sidebar-preview.png`.
+
 ## 1.0.3
 
 - Smoothly scroll to the latest message after sending and keep following through
