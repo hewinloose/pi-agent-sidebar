@@ -1,6 +1,6 @@
 ﻿# Changelog
 
-## Unreleased
+## 1.1.0
 
 - Show **Regenerate** after a paused response, even when no answer text arrived.
 - Regenerate with the selected model after switching to the rewritten session.
