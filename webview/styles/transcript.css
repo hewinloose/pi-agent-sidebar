@@ -1024,7 +1024,6 @@
 .is-active-thinking > .thinking-block .thinking-dot-three {
 	animation: thinking-dot-three 2s step-end infinite;
 }
-}
 
 @keyframes thinking-dot-one {
 	0%,

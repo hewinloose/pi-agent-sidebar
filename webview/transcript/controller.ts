@@ -345,7 +345,6 @@ copyTextFor(messageKey: string): string | undefined {
    if (owning !== undefined) ordinals.set(this.messageKey(message), owning);
   }
   return { ordinals, current: owning ?? Math.max(next - 1, 0) };
- return { ordinals, current: owning ?? Math.max(next - 1, 0) };
  }
 
  /**
