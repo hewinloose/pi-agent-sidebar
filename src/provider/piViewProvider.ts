@@ -502,7 +502,7 @@ export class PiViewProvider
 	}
 
 	/**
-	 * Starts a new session on the running client and refreshes the view.
+	 * Starts a new session on the running client and waits for it to become active.
 	 *
 	 * Shared by the "new session" command and by a history rewrite that would
 	 * otherwise leave a conversation with no user turn: pi refuses to open such a
@@ -519,8 +519,6 @@ export class PiViewProvider
 		if (result.cancelled)
 			throw new SessionMutationCancelledError("New session was cancelled by a pi extension.");
 		await this.waitForSessionReplacement(client, generation, previous);
-		await this.refreshSnapshot();
-		await this.sendSessionList();
 	}
 
 	public async createNewSession(requireConfirmation = true): Promise<boolean> {
@@ -546,6 +544,8 @@ export class PiViewProvider
 				if (error instanceof SessionMutationCancelledError) return false;
 				throw error;
 			}
+			await this.refreshSnapshot();
+			await this.sendSessionList();
 			this.composerReferenceStore.consume(references);
 			await this.attachmentStore.removeResolved(attachments);
 			await Promise.all([this.syncAttachments(), this.syncComposerReferences()]);
@@ -748,17 +748,20 @@ export class PiViewProvider
 		);
 	}
 
-	private async setModel(provider: string, modelId: string): Promise<void> {
-		if (
-			!this.models.some(
-				(model) => model.provider === provider && model.id === modelId,
-			)
-		) {
-			throw new Error("Selected model is no longer available.");
-		}
-		const client = await this.ensureClient();
-		await client.request({ type: "set_model", provider, modelId });
-		await this.refreshSnapshot();
+	private setModel(provider: string, modelId: string): Promise<void> {
+		return this.enqueueSessionMutation(
+			async (generation) => {
+				if (!this.models.some((model) => model.provider === provider && model.id === modelId)) {
+					throw new Error("Selected model is no longer available.");
+				}
+				const client = await this.ensureClient();
+				this.assertSessionMutationContext(client, generation, false);
+				await client.request({ type: "set_model", provider, modelId });
+				this.assertSessionMutationContext(client, generation, false);
+				await this.refreshSnapshot();
+			},
+			{ requireIdle: false },
+		);
 	}
 
 	private async setThinkingLevel(level: string): Promise<void> {
@@ -930,7 +933,8 @@ export class PiViewProvider
 				kind === "delete"
 					? planDeletePrompt(document, entryId)
 					: planTruncateFromPrompt(document, entryId);
-			if (!planHoldsUserTurn(plan)) {
+			const keepsHistory = planHoldsUserTurn(plan);
+			if (!keepsHistory) {
 				// pi cannot open a session that holds no user turn, so a rewrite that
 				// leaves none is expressed as a fresh session instead of a file.
 				this.output.appendLine(`[session] ${kind} leaves no turn; started a new session`);
@@ -941,10 +945,28 @@ export class PiViewProvider
 				this.output.appendLine(`[session] ${kind} rewrote the session into ${path.basename(target)}`);
 				await this.activateSessionFile(client, generation, target);
 			}
+			try {
+				const selectedModel = kind === "regenerate" ? state.model : undefined;
+				const activeModel = this.state.model;
+				// Opening a truncated branch can restore an older model from its history.
+				if (
+					selectedModel &&
+					(selectedModel.provider !== activeModel?.provider || selectedModel.id !== activeModel?.id)
+				) {
+					this.assertSessionMutationContext(client, generation);
+					await client.request({
+						type: "set_model",
+						provider: selectedModel.provider,
+						modelId: selectedModel.id,
+					});
+				}
+			} finally {
+				this.assertSessionMutationContext(client, generation);
+				await this.refreshSnapshot({ historyRewritten: keepsHistory });
+				await this.sendSessionList();
+			}
 			if (kind === "delete") return;
-
-			// Replay through pi rather than hand-writing the user entry: pi owns
-			// the message shape, the model choice and the usage accounting.
+			this.assertSessionMutationContext(client, generation);
 			await client.request({
 				type: "prompt",
 				message: kind === "edit" ? (newText ?? text) : text,
@@ -1020,10 +1042,6 @@ export class PiViewProvider
 		// else reaches it as `undefined` and dies inside its own path handling.
 		await client.request({ type: "switch_session", sessionPath: sessionFile });
 		await this.waitForSessionReplacement(client, generation, previous, sessionFile);
-		// The id changed because this host rebuilt the conversation, not because the
-		// reader opened another one: say so, so the sidebar keeps their place.
-		await this.refreshSnapshot({ historyRewritten: true });
-		await this.sendSessionList();
 	}
 
 	/**

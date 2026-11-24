@@ -157,14 +157,13 @@ opening prompt fell outside the window, and while a turn is running. The four
 history buttons are always in the DOM; the handler refuses them while pi is busy,
 so a stream start never rebuilds a row.
 
-Reply actions belong to that answer and to nothing else: `turnAnswers()` marks
-the last **finished** assistant message with prose in each turn — the message
-that is still streaming and a step that ended with `stopReason: "toolUse"` are
-both skipped — and the renderer only emits `messageActionsHtml` for the marked
-message. So the row appears when the answer lands, never on a step's remark
-(`Trellis SessionStart ✓`) and never as a lone Copy under a half-written answer.
-Because the flag is part of the entry signature, a message that becomes the
-answer is rebuilt instead of keeping the actions it had while streaming.
+`turnAnswers()` marks the last settled assistant reply with prose or
+`stopReason: "aborted"` in each visible turn. The marker excludes the current
+streaming message and intermediate `toolUse` steps. For an aborted reply without
+prose, `messageActionsHtml` renders Regenerate when the prompt ordinal is
+available. The cancellation status and action row stay visible after the turn's
+process folds. The marker participates in the entry signature so the row
+updates when the reply settles.
 The ordinal is computed by `TranscriptController.turnOwners()` over the whole
 snapshot — **not** the rendered window — and offset by
 `state.omittedPromptCount`, which the host supplies because a windowed snapshot

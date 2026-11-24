@@ -1,6 +1,9 @@
 ﻿# Changelog
 
 ## Unreleased
+
+- Show **Regenerate** after a paused response, even when no answer text arrived.
+- Regenerate with the selected model after switching to the rewritten session.
 - Remove the New Trellis Task command and its task-creation service from the
   extension. Project-local Trellis tasks and pi's Trellis resources are unchanged.
 - Change Add to Pi Agent Composer's default editor shortcut to `Ctrl+Tab` on every

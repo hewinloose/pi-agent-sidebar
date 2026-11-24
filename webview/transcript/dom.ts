@@ -27,7 +27,7 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
   // Prose that arrives after an activity-only start changes which slot rules apply
   // (`data-turn-empty` feeds the folded-turn CSS). A patch only swaps sections, so
   // hand the slot back to be rebuilt with fresh attributes and action row.
-  if (slot instanceof HTMLElement && slot.dataset.turnEmpty !== (hasProse(message) ? "false" : "true")) return undefined;
+  if (slot instanceof HTMLElement && slot.dataset.turnEmpty !== (hasTurnContent(message) ? "false" : "true")) return undefined;
   const sections = assistantMessageSections(message, resultMap, controller.liveTools, true, messageKey, true, controller.turnProcessFor(messageKey));
   const host = slot.querySelector(":scope > .message");
   if (!host || !host.classList.contains("assistant-message")) return undefined;
@@ -162,7 +162,7 @@ export function createTranscriptDom(options: TranscriptDomOptions) {
   // answer still streaming keeps the document rhythm and only loses its actions.
   const isStep = message.role === "assistant" && !isAnswer && message.stopReason === "toolUse";
   node.dataset.turnStep = isStep ? "true" : "false";
-  node.dataset.turnEmpty = hasProse(message) ? "false" : "true";
+  node.dataset.turnEmpty = hasTurnContent(message) ? "false" : "true";
   node.dataset.turnHead = turn?.isHead ? "true" : "false";
   node.dataset.turnAfterStep = context.afterStepKeys.has(entry.key) ? "true" : "false";
   applyMessageBoundaryClasses(node, message);
@@ -443,8 +443,9 @@ function linkifyWorkspacePaths(root: Element): void {
 
 }
 
-/** Whether the message renders prose of its own: an answer or a step's remark. */
-function hasProse(message: PiMessage): boolean {
+/** Whether the slot has prose or a cancellation status outside the folded process. */
+function hasTurnContent(message: PiMessage): boolean {
+ if (message.stopReason === "aborted") return true;
  for (const block of Array.isArray(message.content) ? message.content : []) {
   if (block.type !== "text") continue;
   if ((block.text ?? "").trim().length > 0) return true;

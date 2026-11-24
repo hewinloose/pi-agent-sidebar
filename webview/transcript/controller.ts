@@ -349,18 +349,9 @@ copyTextFor(messageKey: string): string | undefined {
  }
 
  /**
-  * Marks each turn's answered message: its last assistant message that carries
-  * prose and has finished.
-  *
-  * "Finished" is what keeps the action row off a moving target. While a step is
-  * still being written it is `state.streamingMessage`; an intermediate step ends
-  * with `stopReason: "toolUse"`. Neither is an answer, so neither shows Copy /
-  * Branch / Regenerate — before this, the step that streamed the acknowledgment
-  * owned the row until the real answer started, and the answer itself owned a
-  * lone Copy while it was still streaming.
-  *
-  * Read over the rendered list so a step that is not on screen cannot claim the
-  * actions. A turn with no prose at all (tools only) marks nothing.
+  * Chooses the last finished answer or aborted reply in each visible turn for its actions.
+  * Aborted replies can be retried before any answer text arrived.
+  * A streaming reply or an intermediate tool step cannot own the action row.
   */
  private turnAnswers(
   visible: readonly PiMessage[],
@@ -369,9 +360,9 @@ copyTextFor(messageKey: string): string | undefined {
   const { streamingMessage } = this.options.state;
   const last = new Map<number, string>();
   for (const message of visible) {
-   if (message.role !== "assistant" || !hasAnswerText(message)) continue;
-   if (message === streamingMessage) continue;
+   if (message.role !== "assistant" || message === streamingMessage) continue;
    if (message.stopReason === "toolUse") continue;
+   if (message.stopReason !== "aborted" && !hasAnswerText(message)) continue;
    const key = this.messageKey(message);
    last.set(owners.ordinals.get(key) ?? owners.current, key);
   }

@@ -75,10 +75,12 @@ A session file is newline-delimited JSON (docs: `session-format.md`, v3):
 | Delete one prompt | The prompt, plus everything up to (not including) the next user prompt — its reply, tool calls and tool results |
 | Edit / regenerate | The prompt and **everything after it** |
 
-Edit and regenerate truncate the tail because the replies that followed answered
-the old text; keeping them would make the transcript contradict itself. The
-provider then replays the prompt through pi, so pi owns the message shape, model
-choice and usage accounting rather than this module hand-writing a user entry.
+Edit and regenerate truncate the selected prompt and its replies, then replay
+the prompt through pi's `prompt` RPC. Before regenerating, the host reads the
+selected model from `get_state`. The replacement session can restore a model
+from an older turn. The host compares the `provider` and `id` after replacement
+and awaits `set_model { provider, modelId }` when either differs. If pi rejects
+the selection, the action reports the error and skips the prompt.
 
 ## Host orchestration (`src/provider/piViewProvider.ts`)
 
@@ -88,7 +90,8 @@ enqueueSessionMutation({ requireIdle: true })
   ├─ get_state.sessionFile                 ← refuse when the session is not on disk
   ├─ loadSessionDocument / plan*           ← validate, then plan
   ├─ writeSessionDocument                  ← new sibling file
-  ├─ activateSessionFile                   ← switch_session + waitForSessionReplacement
+  ├─ activateSessionFile or startFreshSession
+  ├─ set_model (regenerate only, when the replacement changed the model)
   └─ prompt (edit / regenerate only)
 ```
 
@@ -98,6 +101,8 @@ enqueueSessionMutation({ requireIdle: true })
 - `activateSessionFile` deliberately does not reuse `switchSession()`: that method
   takes the mutation queue itself and would deadlock inside a caller that already
   holds it.
+- Model selection uses the same queue, so a regeneration reads the model after
+  any preceding `set_model` request has finished.
 - A running turn is refused before anything is written (`requireIdle`), because
   the reply being streamed would otherwise be written into a file nobody reads.
 

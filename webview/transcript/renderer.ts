@@ -288,16 +288,19 @@ interface MessageActionSpec {
 	danger?: boolean;
 }
 
-const USER_MESSAGE_ACTIONS: readonly MessageActionSpec[] = [
-	{ action: "edit", label: "编辑并重新发送" },
-	{ action: "delete", label: "删除消息", danger: true },
-];
-
-const ASSISTANT_MESSAGE_ACTIONS: readonly MessageActionSpec[] = [
-	{ action: "copy", label: "复制" },
-	{ action: "fork", label: "从此回复创建分支" },
-	{ action: "regenerate", label: "重新生成" },
-];
+const REGENERATE_ACTION: MessageActionSpec = { action: "regenerate", label: "重新生成" };
+const MESSAGE_ACTIONS = {
+	user: [
+		{ action: "edit", label: "编辑并重新发送" },
+		{ action: "delete", label: "删除消息", danger: true },
+	],
+	assistant: [
+		{ action: "copy", label: "复制" },
+		{ action: "fork", label: "从此回复创建分支" },
+		REGENERATE_ACTION,
+	],
+	aborted: [REGENERATE_ACTION],
+} satisfies Record<string, readonly MessageActionSpec[]>;
 
 /**
  * Renders one row's buttons.
@@ -309,11 +312,11 @@ const ASSISTANT_MESSAGE_ACTIONS: readonly MessageActionSpec[] = [
  * no button at all.
  */
 function messageActionsHtml(
-	kind: "user" | "assistant",
+	kind: keyof typeof MESSAGE_ACTIONS,
 	promptOrdinal?: number,
 	copyKey?: string,
 ): string {
-	const spec = kind === "user" ? USER_MESSAGE_ACTIONS : ASSISTANT_MESSAGE_ACTIONS;
+	const spec: readonly MessageActionSpec[] = MESSAGE_ACTIONS[kind];
 	const actions = spec.filter((item) =>
 		item.action === "copy" ? copyKey !== undefined : promptOrdinal !== undefined,
 	);
@@ -507,15 +510,14 @@ function assistantMessageHtml(
 		false,
 		turnProcess,
 	);
-	// Reply actions belong to the turn's answer, not to every step that happens to
-	// hold prose: an acknowledgment step (`Trellis SessionStart ✓`) used to sprout
-	// Copy/Branch/Regenerate and read like a second answer. The controller marks
-	// the answer; a direct render without turn context keeps the old behaviour.
-	// `messageKey` stays the copy cursor: the answer text lives with the message.
-	const hasAnswer = isAnswer && sections.some((section) => section.key.startsWith("content-"));
-	const actions = hasAnswer
-		? messageActionsHtml("assistant", promptOrdinal, messageKey)
-		: "";
+	let actions = "";
+	if (isAnswer && !streaming) {
+		if (sections.some((section) => section.key.startsWith("content-"))) {
+			actions = messageActionsHtml("assistant", promptOrdinal, messageKey);
+		} else if (message.stopReason === "aborted") {
+			actions = messageActionsHtml("aborted", promptOrdinal);
+		}
+	}
 	return `<article class="message assistant-message">${sections
 		.map((section) => section.html)
 		.join("")}</article>${actions}`;
