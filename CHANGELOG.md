@@ -1,5 +1,9 @@
 ﻿# Changelog
 
+## 1.1.1
+
+- Preserve the selected thinking level when regenerating a response after a pause.
+
 ## 1.1.0
 
 - Show **Regenerate** after a paused response, even when no answer text arrived.
