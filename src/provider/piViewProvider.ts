@@ -764,12 +764,20 @@ export class PiViewProvider
 		);
 	}
 
-	private async setThinkingLevel(level: string): Promise<void> {
-		if (!this.thinkingLevels.includes(level))
-			throw new Error("Thinking level is not supported by this model.");
-		const client = await this.ensureClient();
-		await client.request({ type: "set_thinking_level", level });
-		await this.refreshSnapshot();
+	private setThinkingLevel(level: string): Promise<void> {
+		return this.enqueueSessionMutation(
+			async (generation) => {
+				if (!this.thinkingLevels.includes(level)) {
+					throw new Error("Thinking level is not supported by this model.");
+				}
+				const client = await this.ensureClient();
+				this.assertSessionMutationContext(client, generation, false);
+				await client.request({ type: "set_thinking_level", level });
+				this.assertSessionMutationContext(client, generation, false);
+				await this.refreshSnapshot();
+			},
+			{ requireIdle: false },
+		);
 	}
 
 	private async compactSession(): Promise<void> {
@@ -948,17 +956,22 @@ export class PiViewProvider
 			try {
 				const selectedModel = kind === "regenerate" ? state.model : undefined;
 				const activeModel = this.state.model;
-				// Opening a truncated branch can restore an older model from its history.
-				if (
-					selectedModel &&
-					(selectedModel.provider !== activeModel?.provider || selectedModel.id !== activeModel?.id)
-				) {
+				// Opening a truncated branch can restore older model and thinking settings.
+				const modelChanged = selectedModel !== undefined && selectedModel !== null &&
+					(selectedModel.provider !== activeModel?.provider || selectedModel.id !== activeModel?.id);
+				if (modelChanged) {
 					this.assertSessionMutationContext(client, generation);
 					await client.request({
 						type: "set_model",
 						provider: selectedModel.provider,
 						modelId: selectedModel.id,
 					});
+				}
+				const level = kind === "regenerate" ? state.thinkingLevel : undefined;
+				// Setting the model may adjust the thinking level, so restore it last.
+				if (level !== undefined && (modelChanged || level !== this.state.thinkingLevel)) {
+					this.assertSessionMutationContext(client, generation);
+					await client.request({ type: "set_thinking_level", level });
 				}
 			} finally {
 				this.assertSessionMutationContext(client, generation);

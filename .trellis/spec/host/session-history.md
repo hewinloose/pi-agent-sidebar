@@ -76,11 +76,13 @@ A session file is newline-delimited JSON (docs: `session-format.md`, v3):
 | Edit / regenerate | The prompt and **everything after it** |
 
 Edit and regenerate truncate the selected prompt and its replies, then replay
-the prompt through pi's `prompt` RPC. Before regenerating, the host reads the
-selected model from `get_state`. The replacement session can restore a model
-from an older turn. The host compares the `provider` and `id` after replacement
-and awaits `set_model { provider, modelId }` when either differs. If pi rejects
-the selection, the action reports the error and skips the prompt.
+the prompt through pi's `prompt` RPC. Before regenerating, the host captures the
+selected `model` and `thinkingLevel` from `get_state`. The replacement session
+can restore both settings from history. The host compares the model's `provider`
+and `id` and awaits `set_model { provider, modelId }` when either differs. It
+then awaits `set_thinking_level { level }` if the thinking level differs or a model
+was restored, since model selection can adjust the level. A failed settings RPC
+reports an action error and skips the prompt.
 
 ## Host orchestration (`src/provider/piViewProvider.ts`)
 
@@ -92,6 +94,7 @@ enqueueSessionMutation({ requireIdle: true })
   ├─ writeSessionDocument                  ← new sibling file
   ├─ activateSessionFile or startFreshSession
   ├─ set_model (regenerate only, when the replacement changed the model)
+  ├─ set_thinking_level (regenerate only, if the level differs or the model was restored)
   └─ prompt (edit / regenerate only)
 ```
 
@@ -101,8 +104,8 @@ enqueueSessionMutation({ requireIdle: true })
 - `activateSessionFile` deliberately does not reuse `switchSession()`: that method
   takes the mutation queue itself and would deadlock inside a caller that already
   holds it.
-- Model selection uses the same queue, so a regeneration reads the model after
-  any preceding `set_model` request has finished.
+- Model and thinking-level selection use the same queue as regeneration, so
+  `get_state` observes settings applied by preceding selection requests.
 - A running turn is refused before anything is written (`requireIdle`), because
   the reply being streamed would otherwise be written into a file nobody reads.
 
